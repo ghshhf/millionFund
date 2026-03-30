@@ -707,10 +707,12 @@ async function refreshHoldings() {
         >
           降序
         </van-button>
+        <van-button size="small" @click="openBatchDialog" class="mobile-only">批量</van-button>
+        <van-button size="small" @click="restoreHoldings" class="mobile-only">恢复</van-button>
         
-        <!-- 共同按钮 -->
-        <van-button size="small" @click="backupHoldings">备份</van-button>
-        <van-button size="small" @click="restoreHoldings">恢复</van-button>
+        <!-- 网页端按钮 -->
+        <van-button size="small" @click="backupHoldings" class="web-only">备份</van-button>
+        <van-button size="small" @click="restoreHoldings" class="web-only">恢复</van-button>
       </div>
     </div>
 
