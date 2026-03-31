@@ -33,7 +33,7 @@ const formData = ref({
 // ========== 批量录入相关 ==========
 const showBatchDialog = ref(false)
 const batchItems = ref([
-  { code: '', amount: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: '' }
+  { code: '', amount: '', profit: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: '' }
 ])
 const isBatchImporting = ref(false)
 
@@ -524,14 +524,14 @@ const sourceOptions = [
 // [WHAT] 打开批量录入弹窗
 function openBatchDialog() {
   batchItems.value = [
-    { code: '', amount: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: '' }
+    { code: '', amount: '', profit: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: '' }
   ]
   showBatchDialog.value = true
 }
 
 function addBatchItem() {
   batchItems.value.push({
-    code: '', amount: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: ''
+    code: '', amount: '', profit: '', sectors: '', name: '', source: '', isQDII: false, loading: false, error: ''
   })
 }
 
@@ -605,13 +605,22 @@ async function batchImport() {
           console.error('获取净值失败，使用默认值:', error)
         }
         
-        const shares = parseFloat(item.amount) / netValue
+        const marketValue = parseFloat(item.amount)
+        const profit = parseFloat(item.profit) || 0
+        
+        const shares = marketValue / netValue
+        
+        let buyNetValue = netValue
+        if (profit !== 0 && shares > 0) {
+          buyNetValue = (marketValue - profit) / shares
+        }
+        
         const industrySectors = item.sectors?.trim() || undefined
         
         const record: HoldingRecord = {
           code: fund.code,
           name: fund.name,
-          buyNetValue: netValue,
+          buyNetValue: buyNetValue,
           shares: shares,
           buyDate: new Date().toISOString().split('T')[0],
           holdingDays: 0,
@@ -853,11 +862,7 @@ async function refreshHoldings() {
       </template>
 
       <!-- 空状态 -->
-      <van-empty v-else description="暂无持仓记录">
-        <van-button round type="primary" @click="openAddDialog">
-          添加持仓
-        </van-button>
-      </van-empty>
+      <van-empty v-else description="暂无持仓记录" />
       
       <!-- 底部占位，避免被导航栏遮挡 -->
       <div class="bottom-spacer"></div>
@@ -1061,6 +1066,14 @@ async function refreshHoldings() {
                 />
                 
                 <van-field
+                  v-model="item.profit"
+                  type="number"
+                  label="持有收益"
+                  placeholder="请输入持有收益（元），可留空"
+                  :disabled="item.loading"
+                />
+                
+                <van-field
                   v-model="item.sectors"
                   type="text"
                   label="行业板块"
@@ -1100,12 +1113,12 @@ async function refreshHoldings() {
                 <van-loading v-if="item.loading" size="small" />
               </div>
             </div>
-          </div>
 
-          <div class="add-more-btn">
-            <van-button type="default" plain @click="addBatchItem">
-              <van-icon name="add" /> 添加一行
-            </van-button>
+            <div class="add-more-btn">
+              <van-button type="default" plain @click="addBatchItem">
+                <van-icon name="add" /> 添加一行
+              </van-button>
+            </div>
           </div>
         </div>
 
@@ -1763,7 +1776,9 @@ async function refreshHoldings() {
 
 .dialog-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .search-results {
@@ -1937,7 +1952,9 @@ async function refreshHoldings() {
 .batch-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 16px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .batch-item {
