@@ -35,8 +35,9 @@ echo ""
 # 步骤 3: 同步到 Android 项目
 echo -e "${YELLOW}[3/6] 同步到 Android 项目...${NC}"
 mkdir -p android/app/src/main/assets
+rm -rf android/app/src/main/assets/public
 rm -rf android/app/src/main/assets/www
-cp -r dist android/app/src/main/assets/www
+cp -r dist android/app/src/main/assets/public
 echo -e "${GREEN}✓ 同步完成${NC}"
 echo ""
 

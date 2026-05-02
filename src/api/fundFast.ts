@@ -288,6 +288,172 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
   })
 }
 
+// ========== 前十重仓股 ==========
+
+export interface HoldingStock {
+  code: string
+  name: string
+  weight: string
+  change: number | null
+}
+
+export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
+  const cacheKey = `topholdings_${code}`
+  const cached = cache.get<HoldingStock[]>(cacheKey)
+  if (cached) return cached
+
+  return new Promise((resolve) => {
+    ; (window as any).apidata = null
+
+    const scriptId = `holdings_${code}_${Date.now()}`
+    const timeout = setTimeout(() => {
+      cleanup()
+      resolve([])
+    }, 15000)
+
+    const script = document.createElement('script')
+    script.id = scriptId
+    script.src = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10&year=&month=&_=${Date.now()}`
+
+    script.onload = async () => {
+      cleanup()
+      try {
+        const html = (window as any).apidata?.content || ''
+        if (!html) {
+          resolve([])
+          return
+        }
+
+        const headerRow = (html.match(/<thead[\s\S]*?<tr[\s\S]*?<\/tr>[\s\S]*?<\/thead>/i) || [])[0] || ''
+        const headerCells = (headerRow.match(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi) || []).map(th => th.replace(/<[^>]*>/g, '').trim())
+        let idxCode = -1, idxName = -1, idxWeight = -1
+        headerCells.forEach((h, i) => {
+          const t = h.replace(/\s+/g, '')
+          if (idxCode < 0 && (t.includes('股票代码') || t.includes('证券代码'))) idxCode = i
+          if (idxName < 0 && (t.includes('股票名称') || t.includes('证券名称'))) idxName = i
+          if (idxWeight < 0 && (t.includes('占净值比例') || t.includes('占比'))) idxWeight = i
+        })
+
+        const rows = html.match(/<tbody[\s\S]*?<\/tbody>/i) || []
+        const dataRows = rows.length ? rows[0].match(/<tr[\s\S]*?<\/tr>/gi) || [] : html.match(/<tr[\s\S]*?<\/tr>/gi) || []
+
+        const holdings: HoldingStock[] = []
+        for (const r of dataRows) {
+          const tds = (r.match(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi) || []).map(td => td.replace(/<[^>]*>/g, '').trim())
+          if (!tds.length) continue
+
+          let stockCode = ''
+          let stockName = ''
+          let stockWeight = ''
+
+          if (idxCode >= 0 && tds[idxCode]) {
+            const m = tds[idxCode].match(/(\d{6})/)
+            stockCode = m ? m[1] : tds[idxCode]
+          } else {
+            const codeIdx = tds.findIndex(txt => /^\d{6}$/.test(txt))
+            if (codeIdx >= 0) stockCode = tds[codeIdx]
+          }
+
+          if (idxName >= 0 && tds[idxName]) {
+            stockName = tds[idxName]
+          } else if (stockCode) {
+            const i = tds.findIndex(txt => txt && txt !== stockCode && !/%$/.test(txt))
+            stockName = i >= 0 ? tds[i] : ''
+          }
+
+          if (idxWeight >= 0 && tds[idxWeight]) {
+            const wm = tds[idxWeight].match(/([\d.]+)\s*%/)
+            stockWeight = wm ? `${wm[1]}%` : tds[idxWeight]
+          } else {
+            const wIdx = tds.findIndex(txt => /\d+(?:\.\d+)?\s*%/.test(txt))
+            stockWeight = wIdx >= 0 ? (tds[wIdx].match(/([\d.]+)\s*%/)?.[1] + '%') : ''
+          }
+
+          if (stockCode || stockName || stockWeight) {
+            holdings.push({ code: stockCode, name: stockName, weight: stockWeight, change: null })
+          }
+        }
+
+        const top10 = holdings.slice(0, 10)
+        const needQuotes = top10.filter(h => /^\d{6}$/.test(h.code) || /^\d{5}$/.test(h.code) || /^[A-Z]{1,6}$/.test(h.code))
+
+        if (needQuotes.length > 0) {
+          const tencentCodes = needQuotes.map(h => {
+            const cd = String(h.code || '')
+            if (/^\d{6}$/.test(cd)) {
+              const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
+              return `s_${pfx}${cd}`
+            }
+            if (/^\d{5}$/.test(cd)) {
+              return `s_hk${cd}`
+            }
+            if (/^[A-Z]{1,6}$/.test(cd)) {
+              return `s_us${cd}`
+            }
+            return null
+          }).filter(Boolean).join(',')
+
+          if (tencentCodes) {
+            await new Promise<void>((resQuote) => {
+              const scriptQuote = document.createElement('script')
+              scriptQuote.src = `https://qt.gtimg.cn/q=${tencentCodes}`
+              scriptQuote.onload = () => {
+                needQuotes.forEach(h => {
+                  const cd = String(h.code || '')
+                  let varName = ''
+                  if (/^\d{6}$/.test(cd)) {
+                    const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
+                    varName = `v_s_${pfx}${cd}`
+                  } else if (/^\d{5}$/.test(cd)) {
+                    varName = `v_s_hk${cd}`
+                  } else if (/^[A-Z]{1,6}$/.test(cd)) {
+                    varName = `v_s_us${cd}`
+                  } else {
+                    return
+                  }
+                  const dataStr = (window as any)[varName]
+                  if (dataStr) {
+                    const parts = dataStr.split('~')
+                    if (parts.length > 5) {
+                      h.change = parseFloat(parts[5])
+                    }
+                  }
+                })
+                if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+                resQuote()
+              }
+              scriptQuote.onerror = () => {
+                if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+                resQuote()
+              }
+              document.body.appendChild(scriptQuote)
+            })
+          }
+        }
+
+        cache.set(cacheKey, top10, CACHE_TTL.NET_VALUE)
+        resolve(top10)
+      } catch (err) {
+        console.error('[fetchTopHoldings] 解析失败:', err)
+        resolve([])
+      }
+    }
+
+    script.onerror = () => {
+      cleanup()
+      resolve([])
+    }
+
+    function cleanup() {
+      clearTimeout(timeout)
+      const s = document.getElementById(scriptId)
+      if (s) document.body.removeChild(s)
+    }
+
+    document.body.appendChild(script)
+  })
+}
+
 // ========== 沪深300指数历史数据 ==========
 
 /**
