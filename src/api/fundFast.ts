@@ -8,15 +8,17 @@ import type { FundEstimate, NetValueRecord } from '@/types/fund'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
-  // 清除所有跟该基金相关的缓存
   const keys = ['estimate', 'netvalue', 'kline', 'period']
   keys.forEach(prefix => {
-    // 清除所有可能的days参数组合
     ;[30, 60, 90, 180, 365, 400].forEach(days => {
       cache.delete(`${prefix}_${code}_${days}`)
     })
     cache.delete(`${prefix}_${code}`)
   })
+    // [WHY] 同时清除沪深300缓存，防止之前加载到错误数据
+    ;[30, 60, 90, 180, 365, 400].forEach(days => {
+      cache.delete(`hs300_history_${days}`)
+    })
 }
 
 // [WHAT] 清除所有缓存
@@ -221,6 +223,9 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
   if (cached) return cached
 
   return new Promise((resolve) => {
+    // [WHY] 加载前清空全局变量，防止读到上一个脚本残留的数据
+    ; (window as any).Data_netWorthTrend = []
+
     const scriptId = `netvalue_${code}_${Date.now()}`
     const timeout = setTimeout(() => {
       cleanup()
@@ -252,7 +257,7 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
           return {
             date: dateStr,
             netValue: item.y || 0,
-            totalNetValue: item.y || 0,
+            totalValue: item.y || 0,
             changeRate: item.equityReturn || 0
           }
         })
@@ -270,6 +275,90 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
 
     script.onerror = () => {
       cleanup()
+      resolve([])
+    }
+
+    function cleanup() {
+      clearTimeout(timeout)
+      const s = document.getElementById(scriptId)
+      if (s) document.body.removeChild(s)
+    }
+
+    document.body.appendChild(script)
+  })
+}
+
+// ========== 沪深300指数历史数据 ==========
+
+/**
+ * 获取沪深300指数历史净值数据
+ * [WHY] 用于与基金走势对比分析
+ * [WHAT] 沪深300指数基金代码 000300，使用与普通基金相同的接口
+ * @param days 获取天数，默认90天
+ */
+export async function fetchHS300History(days = 90): Promise<NetValueRecord[]> {
+  const cacheKey = `hs300_history_${days}`
+  const cached = cache.get<NetValueRecord[]>(cacheKey)
+  if (cached) return cached
+
+  // [WHY] 使用沪深300ETF基金代码 510300（华泰柏瑞沪深300ETF）
+  // 指数代码 000300 在 pingzhongdata API 上不支持，会读到上一个基金的全局变量
+  const hs300Code = '510300'
+
+  return new Promise((resolve) => {
+    // [WHY] 加载前清空全局变量，防止读到上一个基金的数据
+    ; (window as any).Data_netWorthTrend = []
+
+    const scriptId = `hs300_${Date.now()}`
+    const timeout = setTimeout(() => {
+      cleanup()
+      console.warn('[fetchHS300History] 加载超时')
+      resolve([])
+    }, 15000)
+
+    const script = document.createElement('script')
+    script.id = scriptId
+    script.src = `https://fund.eastmoney.com/pingzhongdata/${hs300Code}.js?v=${Date.now()}`
+
+    script.onload = () => {
+      cleanup()
+      try {
+        const trend = (window as any).Data_netWorthTrend || []
+
+        if (trend.length === 0) {
+          console.warn('[fetchHS300History] Data_netWorthTrend 为空，API可能不支持该代码')
+          resolve([])
+          return
+        }
+
+        console.log('[fetchHS300History] 成功加载', trend.length, '条数据, 首值:', trend[0]?.y, '末值:', trend[trend.length - 1]?.y)
+
+        const recentData = trend.slice(-days)
+
+        const records: NetValueRecord[] = recentData.map((item: any) => {
+          const date = new Date(item.x)
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+          return {
+            date: dateStr,
+            netValue: item.y || 0,
+            totalValue: item.y || 0,
+            changeRate: item.equityReturn || 0
+          }
+        })
+
+        records.reverse()
+
+        cache.set(cacheKey, records, CACHE_TTL.NET_VALUE)
+        resolve(records)
+      } catch (err) {
+        console.error('[fetchHS300History] 解析失败:', err)
+        resolve([])
+      }
+    }
+
+    script.onerror = () => {
+      cleanup()
+      console.warn('[fetchHS300History] 脚本加载失败')
       resolve([])
     }
 
@@ -521,7 +610,7 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
     const isNavFromYesterday = navData?.date === yesterday
     const isNavFromToday = navData?.date === today
-    
+
     // [WHAT] QDII基金逻辑：昨日净值 > 今日净值 > 今日估值 > 昨日估值
     // [WHY] 净值比估值准确，昨日的净值比今日的估值更有参考价值
     if (isNavFromYesterday && result.nav > 0) {

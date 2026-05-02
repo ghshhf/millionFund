@@ -4,7 +4,7 @@
 // [HOW] Canvas绘制，requestAnimationFrame实现流畅实时动画
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
-import { fetchSimpleKLineData, calculatePeriodReturns, clearFundCache, type SimpleKLineData, type PeriodReturn } from '@/api/fundFast'
+import { fetchSimpleKLineData, calculatePeriodReturns, clearFundCache, fetchHS300History, type SimpleKLineData, type PeriodReturn } from '@/api/fundFast'
 import { useThemeStore } from '@/stores/theme'
 import { isTradingTime } from '@/api/tiantianApi'
 
@@ -48,6 +48,17 @@ interface IntradayPoint {
 const intradayData = ref<IntradayPoint[]>([])
 const baseValue = ref(0)
 
+// [WHAT] 沪深300数据
+interface HS300Data {
+  time: string
+  value: number
+}
+const hs300Data = ref<HS300Data[]>([])
+const showHS300 = ref(true) // 是否显示沪深300曲线
+
+// [WHAT] 图表模式：'performance' 业绩走势 | 'netvalue' 净值走势
+const chartMode = ref('performance')
+
 
 // [WHAT] 时间周期配置（适配基金每日净值数据）
 const periods = [
@@ -58,6 +69,14 @@ const periods = [
   { key: '6m', label: '6月', days: 180 },   // 近6个月
   { key: '1y', label: '1年', days: 365 },   // 近1年
 ]
+
+// [WHAT] 计算业绩走势收益率数据（基于当前选中的周期）
+// [WHY] 定义在这里，实际实现在 filteredData 之后
+interface PerformancePoint {
+  time: string
+  fundReturn: number
+  hs300Return: number
+}
 
 // [WHAT] 判断是否是当日分时模式
 const isIntradayMode = computed(() => activePeriod.value === '1d')
@@ -214,10 +233,79 @@ const currentChange = computed(() => {
   return props.realtimeChange || 0
 })
 
+// [WHAT] 计算业绩走势收益率数据（基于当前选中的周期）
+const performanceData = computed((): PerformancePoint[] => {
+  const data = filteredData.value
+  if (data.length === 0) return []
+  
+  const fundFirstValue = data[0]?.value || 1
+  
+  // [WHY] 将沪深300数据转为 Map，方便快速查找（O(1) vs O(n)）
+  // 同时处理日期格式统一
+  const hs300Map = new Map<string, number>()
+  hs300Data.value.forEach(h => {
+    hs300Map.set(h.time, h.value)
+  })
+  
+  // [WHAT] 找到基金起始时间对应的沪深300值
+  const fundStartTime = data[0]?.time
+  
+  // [WHY] 找到 >= 基金起始时间的第一个沪深300数据点作为基准
+  let hs300FirstValue = 1
+  for (const h of hs300Data.value) {
+    if (h.time >= fundStartTime) {
+      hs300FirstValue = h.value
+      break
+    }
+  }
+  
+  // [WHAT] 用于存储上一个有效的沪深300值（处理缺失日期）
+  let lastValidHS300Value = hs300FirstValue
+  
+  return data.map(point => {
+    // [WHY] 基金收益率 = (当前值 - 起始值) / 起始值 * 100
+    const fundReturn = ((point.value - fundFirstValue) / fundFirstValue) * 100
+    
+    // [WHY] 优先精确匹配，否则使用最近的前值
+    let hs300Return = 0
+    const hs300Value = hs300Map.get(point.time)
+    
+    if (hs300Value !== undefined) {
+      lastValidHS300Value = hs300Value
+      if (hs300FirstValue > 0) {
+        hs300Return = ((hs300Value - hs300FirstValue) / hs300FirstValue) * 100
+      }
+    } else {
+      // [EDGE] 该日期没有沪深300数据，使用最近的有效值计算
+      if (hs300FirstValue > 0 && lastValidHS300Value > 0) {
+        hs300Return = ((lastValidHS300Value - hs300FirstValue) / hs300FirstValue) * 100
+      }
+    }
+    
+    return {
+      time: point.time,
+      fundReturn,
+      hs300Return
+    }
+  })
+})
+
+// [WHAT] 计算最终涨跌幅（用于图例显示）
+const fundPerformanceChange = computed(() => {
+  if (performanceData.value.length === 0) return 0
+  return performanceData.value[performanceData.value.length - 1]?.fundReturn || 0
+})
+
+const hs300PerformanceChange = computed(() => {
+  if (performanceData.value.length === 0) return 0
+  return performanceData.value[performanceData.value.length - 1]?.hs300Return || 0
+})
+
 // [WHAT] 调试信息
 const debugMessage = computed(() => {
   const lastData = chartData.value[chartData.value.length - 1]
-  return `最后数据：${lastData?.time || 'none'} (${lastData?.value?.toFixed(4) || '--'}) | 今天：${new Date().toISOString().split('T')[0]} | 实时值：${props.realtimeValue}`
+  const lastPerf = performanceData.value[performanceData.value.length - 1]
+  return `基金数据:${chartData.value.length}条 | 沪深300:${hs300Data.value.length}条 | 业绩点:${performanceData.value.length}条 | 基金收益:${fundPerformanceChange.value.toFixed(2)}% | 沪深300收益:${hs300PerformanceChange.value.toFixed(2)}%`
 })
 
 // [WHAT] 统计数据
@@ -270,14 +358,25 @@ async function loadData() {
   try {
     clearFundCache(props.fundCode)
     
-    const [kline, returns] = await Promise.all([
-      fetchSimpleKLineData(props.fundCode, 400),
-      calculatePeriodReturns(props.fundCode)
-    ])
+    // [WHY] 必须串行加载！两个API都使用同一个全局变量 Data_netWorthTrend
+    // Promise.all 并行加载会导致全局变量被覆盖，沪深300读到基金数据
+    const kline = await fetchSimpleKLineData(props.fundCode, 400)
+    const returns = await calculatePeriodReturns(props.fundCode)
+    const hs300 = await fetchHS300History(400)
     
     chartData.value = kline
     periodReturns.value = returns
     
+    // [WHAT] 转换沪深300数据格式
+    hs300Data.value = hs300.map(item => ({
+      time: item.date,
+      value: item.netValue
+    })).reverse() // 转为正序（旧->新）
+    
+    console.log('[OKXChart] 基金数据:', kline.length, '条, 沪深300:', hs300.length, '条')
+    if (kline.length > 0 && hs300.length > 0) {
+      console.log('[OKXChart] 基金首值:', kline[0]?.value, '沪深300首值:', hs300Data.value[0]?.value)
+    }
     
     await nextTick()
     drawChart()
@@ -288,6 +387,199 @@ async function loadData() {
   }
 }
 
+
+// ========== 业绩走势图绘制（仿支付宝风格） ==========
+function drawPerformanceChart(
+  ctx: CanvasRenderingContext2D, 
+  width: number, 
+  height: number, 
+  mainHeight: number,
+  padding: { top: number; right: number; bottom: number; left: number },
+  chartWidth: number,
+  colors: ReturnType<typeof getThemeColors>
+) {
+  const perfData = performanceData.value
+  if (perfData.length === 0) return
+  
+  // [WHAT] 计算收益率范围
+  const allReturns = [
+    ...perfData.map(d => d.fundReturn),
+    ...(showHS300.value ? perfData.map(d => d.hs300Return) : [])
+  ]
+  let minReturn = Math.min(...allReturns)
+  let maxReturn = Math.max(...allReturns)
+  
+  // [WHY] 确保包含0%基准线，并添加边距
+  minReturn = Math.min(minReturn, 0)
+  maxReturn = Math.max(maxReturn, 0)
+  const returnMargin = (maxReturn - minReturn) * 0.1 || 2
+  minReturn -= returnMargin
+  maxReturn += returnMargin
+  
+  const returnRange = maxReturn - minReturn || 1
+  
+  // [WHAT] Y轴转换为收益率坐标
+  const toY = (ret: number) => {
+    return padding.top + (mainHeight - padding.top) * (1 - (ret - minReturn) / returnRange)
+  }
+  
+  // [WHAT] X轴坐标
+  const toX = (index: number) => {
+    return padding.left + (chartWidth / Math.max(perfData.length - 1, 1)) * index
+  }
+  
+  // ========== 绘制网格线 ==========
+  ctx.strokeStyle = colors.gridColor
+  ctx.lineWidth = 1
+  
+  for (let i = 0; i <= 4; i++) {
+    const ret = maxReturn - returnRange * i / 4
+    const y = toY(ret)
+    ctx.beginPath()
+    ctx.moveTo(padding.left, y)
+    ctx.lineTo(width - padding.right, y)
+    ctx.stroke()
+    
+    // [WHAT] Y轴刻度（百分比）
+    ctx.fillStyle = colors.textSecondary
+    ctx.font = '10px Arial'
+    ctx.textAlign = 'left'
+    ctx.fillText(`${ret.toFixed(2)}%`, width - padding.right + 5, y + 3)
+  }
+  
+  // ========== 绘制0%基准线（加粗） ==========
+  const zeroY = toY(0)
+  ctx.beginPath()
+  ctx.moveTo(padding.left, zeroY)
+  ctx.lineTo(width - padding.right, zeroY)
+  ctx.strokeStyle = colors.borderColor
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  
+  // ========== 绘制基金曲线（蓝色实线） ==========
+  const fundPoints = perfData.map((d, i) => ({ x: toX(i), y: toY(d.fundReturn), value: d.fundReturn }))
+  
+  if (fundPoints.length > 0) {
+    // [WHAT] 填充渐变区域
+    ctx.beginPath()
+    ctx.moveTo(fundPoints[0].x, zeroY)
+    
+    for (let i = 0; i < fundPoints.length; i++) {
+      const p = fundPoints[i]
+      if (i === 0) {
+        ctx.lineTo(p.x, p.y)
+        continue
+      }
+      
+      if (fundPoints.length < 3) {
+        ctx.lineTo(p.x, p.y)
+      } else {
+        const p0 = fundPoints[Math.max(i - 1, 0)]
+        const p1 = fundPoints[i]
+        const p2 = fundPoints[Math.min(i + 1, fundPoints.length - 1)]
+        const p3 = fundPoints[Math.min(i + 2, fundPoints.length - 1)]
+        
+        const tension = 6
+        const cp1x = p1.x + (p2.x - p0.x) / tension
+        const cp1y = p1.y + (p2.y - p0.y) / tension
+        const cp2x = p2.x - (p3.x - p1.x) / tension
+        const cp2y = p2.y - (p3.y - p1.y) / tension
+        
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+      }
+    }
+    
+    ctx.lineTo(fundPoints[fundPoints.length - 1].x, zeroY)
+    ctx.closePath()
+    
+    // [WHY] 根据最终涨跌决定颜色
+    const isUp = fundPerformanceChange.value >= 0
+    const fillColor = isUp ? 'rgba(246, 70, 93, 0.15)' : 'rgba(14, 203, 129, 0.15)'
+    ctx.fillStyle = fillColor
+    ctx.fill()
+    
+    // [WHAT] 绘制曲线
+    ctx.beginPath()
+    ctx.moveTo(fundPoints[0].x, fundPoints[0].y)
+    
+    for (let i = 1; i < fundPoints.length; i++) {
+      if (fundPoints.length < 3) {
+        ctx.lineTo(fundPoints[i].x, fundPoints[i].y)
+      } else {
+        const p0 = fundPoints[Math.max(i - 1, 0)]
+        const p1 = fundPoints[i]
+        const p2 = fundPoints[Math.min(i + 1, fundPoints.length - 1)]
+        const p3 = fundPoints[Math.min(i + 2, fundPoints.length - 1)]
+        
+        const tension = 6
+        const cp1x = p1.x + (p2.x - p0.x) / tension
+        const cp1y = p1.y + (p2.y - p0.y) / tension
+        const cp2x = p2.x - (p3.x - p1.x) / tension
+        const cp2y = p2.y - (p3.y - p1.y) / tension
+        
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+      }
+    }
+    
+    ctx.strokeStyle = isUp ? '#f6465d' : '#0ecb81'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
+  
+  // ========== 绘制沪深300曲线（灰色虚线） ==========
+  if (showHS300.value && hs300Data.value.length > 0) {
+    const hs300Points = perfData
+      .filter((d, i) => d.hs300Return !== 0 || i === 0)
+      .map((d, i) => ({ x: toX(i), y: toY(d.hs300Return) }))
+      .filter(p => !isNaN(p.y))
+    
+    if (hs300Points.length > 1) {
+      ctx.beginPath()
+      ctx.moveTo(hs300Points[0].x, hs300Points[0].y)
+      
+      for (let i = 1; i < hs300Points.length; i++) {
+        ctx.lineTo(hs300Points[i].x, hs300Points[i].y)
+      }
+      
+      ctx.strokeStyle = '#999999' // 灰色
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([5, 3]) // 虚线
+      ctx.stroke()
+      ctx.setLineDash([]) // 恢复实线
+    }
+  }
+  
+  // ========== 绘制最新点标记 ==========
+  if (fundPoints.length > 0) {
+    const lastPoint = fundPoints[fundPoints.length - 1]
+    const isUp = fundPerformanceChange.value >= 0
+    
+    // 脉冲动画点
+    const pulseSize = 4 + Math.sin(Date.now() / 200) * 1.5
+    ctx.beginPath()
+    ctx.arc(lastPoint.x, lastPoint.y, pulseSize, 0, Math.PI * 2)
+    ctx.fillStyle = isUp ? '#f6465d' : '#0ecb81'
+    ctx.fill()
+  }
+  
+  // ========== 绘制X轴时间标签 ==========
+  ctx.fillStyle = colors.textSecondary
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'center'
+  
+  const maxLabels = width < 350 ? 3 : (width < 450 ? 4 : 5)
+  const labelCount = Math.min(maxLabels, perfData.length)
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.floor((perfData.length - 1) * i / Math.max(labelCount - 1, 1))
+    const point = perfData[idx]
+    if (!point) continue
+    const x = toX(idx)
+    
+    const parts = point.time.split('-')
+    const label = parts.length >= 3 ? `${parts[1]}-${parts[2]}` : point.time.slice(-5)
+    ctx.fillText(label, x, height - 8)
+  }
+}
 
 // ========== Canvas 绘图（专业风格） ==========
 function drawChart() {
@@ -341,6 +633,13 @@ function drawChart() {
   ctx.fillStyle = colors.bgPrimary
   ctx.fillRect(0, 0, width, height)
   
+  // ========== 业绩走势模式 ==========
+  if (chartMode.value === 'performance' && performanceData.value.length > 0) {
+    drawPerformanceChart(ctx, width, height, mainHeight, padding, chartWidth, colors)
+    return
+  }
+  
+  // ========== 净值走势模式（原有逻辑） ==========
   // 计算价格范围
   const values = data.map(d => d.value)
   let minValue = Math.min(...values)
@@ -553,6 +852,57 @@ function drawChart() {
     ctx.lineWidth = 2
     ctx.stroke()
     
+    // [WHAT] 绘制沪深300曲线（黄色）- 相对趋势对比
+    if (showHS300.value && hs300Data.value.length > 0) {
+      // [WHY] 过滤与基金数据相同时间范围的沪深300数据
+      const fundStartTime = data[0]?.time
+      const fundEndTime = data[data.length - 1]?.time
+      
+      const filteredHS300 = hs300Data.value.filter(item => {
+        return item.time >= fundStartTime && item.time <= fundEndTime
+      })
+      
+      if (filteredHS300.length > 0) {
+        // [WHY] 相对趋势对比：将沪深300起点对齐到基金起点
+        // 计算对齐比例：基金第一个值 / 沪深300第一个值
+        const fundFirstValue = data[0]?.value || 1
+        const hs300FirstValue = filteredHS300[0]?.value || 1
+        const alignRatio = fundFirstValue / hs300FirstValue
+        
+        // [WHAT] 计算对齐后的沪深300点
+        const hs300Points = filteredHS300.map((item, i) => {
+          const x = padding.left + (chartWidth / Math.max(data.length - 1, 1)) * 
+            (data.findIndex(d => d.time === item.time) / Math.max(data.length - 1, 1) * (data.length - 1))
+          // [WHY] 对齐后的值 = 原始值 × 对齐比例
+          const alignedValue = item.value * alignRatio
+          const y = padding.top + (mainHeight - padding.top) * (1 - (alignedValue - minValue) / valueRange)
+          return { x, y, value: alignedValue }
+        }).filter(p => p.x >= padding.left) // 只保留有对应X坐标的点
+
+        if (hs300Points.length > 1) {
+          ctx.beginPath()
+          ctx.moveTo(hs300Points[0].x, hs300Points[0].y)
+          
+          // [HOW] 使用直线连接沪深300点（数据点可能不连续）
+          for (let i = 1; i < hs300Points.length; i++) {
+            ctx.lineTo(hs300Points[i].x, hs300Points[i].y)
+          }
+          
+          ctx.strokeStyle = '#f5a623' // 黄色
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([5, 3]) // 虚线样式
+          ctx.stroke()
+          ctx.setLineDash([]) // 恢复实线
+          
+          // [WHAT] 绘制图例说明
+          ctx.fillStyle = '#f5a623'
+          ctx.font = '10px Arial'
+          ctx.textAlign = 'left'
+          ctx.fillText('沪深300(对齐)', padding.left + 5, padding.top + 12)
+        }
+      }
+    }
+    
     // 绘制最新点动画 + 精确数值标注
     if (data.length > 0) {
       const lastPoint = data[data.length - 1]!
@@ -742,6 +1092,16 @@ watch(() => themeStore.actualTheme, () => {
   nextTick(drawChart)
 })
 
+// [WHY] 监控沪深300显示切换，重绘图表
+watch(showHS300, () => {
+  nextTick(drawChart)
+})
+
+// [WHY] 监控图表模式切换，重绘图表
+watch(chartMode, () => {
+  nextTick(drawChart)
+})
+
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
@@ -766,25 +1126,53 @@ onUnmounted(() => {
 
 <template>
   <div class="pro-chart">
-    <!-- 调试信息 -->
-    <div class="debug-info" style="font-size: 10px; color: #999; padding: 10px 8px; background: rgba(0,0,0,0.05); margin-bottom: 8px;">
-      {{ debugMessage }}
-    </div>
-    
-    <!-- 时间周期选择器 -->
-    <div class="period-selector">
-      <div
-        v-for="p in periods"
-        :key="p.key"
-        class="period-btn"
-        :class="{ active: activePeriod === p.key }"
-        @click.stop="selectPeriod(p.key)"
-      >
-        {{ p.label }}
+    <!-- [WHAT] 图表类型切换 + 时间周期选择器 -->
+    <div class="chart-header">
+      <div class="mode-tabs">
+        <button 
+          class="mode-tab" 
+          :class="{ active: chartMode === 'performance' }"
+          @click="chartMode = 'performance'"
+        >业绩走势</button>
+        <button 
+          class="mode-tab" 
+          :class="{ active: chartMode === 'netvalue' }"
+          @click="chartMode = 'netvalue'"
+        >累计盈亏</button>
       </div>
-      <div class="period-tools">
-        <span class="tool-label">实时</span>
-        <span class="live-dot"></span>
+      
+      <div class="period-selector">
+        <div
+          v-for="p in periods"
+          :key="p.key"
+          class="period-btn"
+          :class="{ active: activePeriod === p.key }"
+          @click.stop="selectPeriod(p.key)"
+        >
+          {{ p.label }}
+        </div>
+        <div class="period-tools">
+          <span class="tool-label">实时</span>
+          <span class="live-dot"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- [WHAT] 业绩走势图例（仿支付宝风格） -->
+    <div v-if="chartMode === 'performance' && performanceData.length > 0" class="performance-legend">
+      <div class="legend-item fund-legend">
+        <span class="legend-dot"></span>
+        <span class="legend-label">本基金</span>
+        <span class="legend-value" :class="fundPerformanceChange >= 0 ? 'up' : 'down'">
+          {{ fundPerformanceChange >= 0 ? '+' : '' }}{{ fundPerformanceChange.toFixed(2) }}%
+        </span>
+      </div>
+      <div v-if="showHS300 && hs300Data.length > 0" class="legend-item hs300-legend">
+        <span class="legend-dash"></span>
+        <span class="legend-label">沪深300</span>
+        <span class="legend-value" :class="hs300PerformanceChange >= 0 ? 'up' : 'down'">
+          {{ hs300PerformanceChange >= 0 ? '+' : '' }}{{ hs300PerformanceChange.toFixed(2) }}%
+        </span>
       </div>
     </div>
 
@@ -852,6 +1240,100 @@ onUnmounted(() => {
   overscroll-behavior: contain;
   transition: background-color 0.3s;
 }
+
+/* [WHAT] 图表头部（模式切换 + 时间周期） */
+.chart-header {
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* [WHAT] 模式切换标签 */
+.mode-tabs {
+  display: flex;
+  padding: 8px 12px 4px;
+  gap: 6px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.mode-tab {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  white-space: nowrap;
+}
+
+.mode-tab.active {
+  color: #fff;
+  background: linear-gradient(135deg, #1677ff, #0958d9);
+  font-weight: 500;
+}
+
+.mode-tab:not(.active):hover {
+  background: var(--bg-secondary);
+}
+
+/* [WHAT] 业绩走势图例（仿支付宝风格） */
+.performance-legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1677ff;
+  flex-shrink: 0;
+}
+
+.fund-legend .legend-dot {
+  background: var(--color-up);
+}
+
+.legend-dash {
+  width: 16px;
+  height: 2px;
+  background: #999999;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.legend-dash::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  border-top: 2px dashed #999999;
+}
+
+.legend-label {
+  color: var(--text-secondary);
+}
+
+.legend-value {
+  font-weight: 600;
+  font-family: -apple-system, 'SF Mono', monospace;
+}
+
+.legend-value.up { color: var(--color-up); }
+.legend-value.down { color: var(--color-down); }
 
 /* 时间周期选择器 */
 .period-selector {
@@ -924,6 +1406,44 @@ onUnmounted(() => {
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* [WHAT] 沪深300切换按钮样式 */
+.hs300-toggle {
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.hs300-toggle:hover {
+  opacity: 0.8;
+}
+
+.hs300-toggle.active {
+  background: rgba(245, 166, 35, 0.15);
+  border-color: #f5a623;
+}
+
+.hs300-icon {
+  font-size: 12px;
+}
+
+.hs300-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.hs300-toggle.active .hs300-label {
+  color: #f5a623;
 }
 
 /* OHLC信息栏 */
