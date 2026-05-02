@@ -56,7 +56,7 @@ interface HS300Data {
 const hs300Data = ref<HS300Data[]>([])
 const showHS300 = ref(true) // 是否显示沪深300曲线
 
-// [WHAT] 图表模式：'performance' 业绩走势 | 'netvalue' 净值走势
+// [WHAT] 图表模式：始终使用业绩走势模式
 const chartMode = ref('performance')
 
 
@@ -526,7 +526,7 @@ function drawPerformanceChart(
     ctx.stroke()
   }
   
-  // ========== 绘制沪深300曲线（灰色虚线） ==========
+  // ========== 绘制沪深300曲线（黄色实线） ==========
   if (showHS300.value && hs300Data.value.length > 0) {
     const hs300Points = perfData
       .filter((d, i) => d.hs300Return !== 0 || i === 0)
@@ -541,11 +541,10 @@ function drawPerformanceChart(
         ctx.lineTo(hs300Points[i].x, hs300Points[i].y)
       }
       
-      ctx.strokeStyle = '#999999' // 灰色
+      ctx.strokeStyle = '#f0b90b' // 黄色
       ctx.lineWidth = 1.5
-      ctx.setLineDash([5, 3]) // 虚线
+      ctx.setLineDash([]) // 实线
       ctx.stroke()
-      ctx.setLineDash([]) // 恢复实线
     }
   }
   
@@ -1128,19 +1127,6 @@ onUnmounted(() => {
   <div class="pro-chart">
     <!-- [WHAT] 图表类型切换 + 时间周期选择器 -->
     <div class="chart-header">
-      <div class="mode-tabs">
-        <button 
-          class="mode-tab" 
-          :class="{ active: chartMode === 'performance' }"
-          @click="chartMode = 'performance'"
-        >业绩走势</button>
-        <button 
-          class="mode-tab" 
-          :class="{ active: chartMode === 'netvalue' }"
-          @click="chartMode = 'netvalue'"
-        >累计盈亏</button>
-      </div>
-      
       <div class="period-selector">
         <div
           v-for="p in periods"
@@ -1159,7 +1145,7 @@ onUnmounted(() => {
     </div>
 
     <!-- [WHAT] 业绩走势图例（仿支付宝风格） -->
-    <div v-if="chartMode === 'performance' && performanceData.length > 0" class="performance-legend">
+    <div v-if="performanceData.length > 0" class="performance-legend">
       <div class="legend-item fund-legend">
         <span class="legend-dot"></span>
         <span class="legend-label">本基金</span>
@@ -1307,20 +1293,13 @@ onUnmounted(() => {
 .legend-dash {
   width: 16px;
   height: 2px;
-  background: #999999;
+  background: #f0b90b;
   flex-shrink: 0;
   position: relative;
 }
 
 .legend-dash::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
-  border-top: 2px dashed #999999;
+  display: none;
 }
 
 .legend-label {
