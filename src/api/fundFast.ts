@@ -288,6 +288,68 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
   })
 }
 
+/**
+ * 获取基金当日分时估值数据
+ * [WHY] 参考 fund-baby 实现，使用腾讯财经接口
+ * [WHAT] 返回每分钟估值数据，用于绘制分时图
+ */
+export interface IntradayPoint {
+  time: string
+  value: number
+  growth: number
+}
+
+export async function fetchIntradayData(code: string): Promise<IntradayPoint[] | null> {
+  // [WHY] 分时数据实时性要求高，交易时间不做缓存，非交易时间可短暂缓存
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const isTradingTime = (hour === 9 && minute >= 30) ||
+    (hour === 10) ||
+    (hour === 11 && minute <= 30) ||
+    (hour === 13) ||
+    (hour === 14)
+
+  const cacheKey = `intraday_${code}`
+  if (!isTradingTime) {
+    const cached = cache.get<IntradayPoint[]>(cacheKey)
+    if (cached) return cached
+  }
+
+  try {
+    const url = `https://web.ifzq.gtimg.cn/fund/newfund/fundSsgz/getSsgz?app=web&symbol=jj${code}&_=${Date.now()}`
+    const response = await fetch(url)
+    if (!response.ok) return null
+
+    const result = await response.json()
+    if (result.code === 0 && result.data && Array.isArray(result.data.data)) {
+      const { data: list, yesterdayDwjz } = result.data
+      const yDwjz = parseFloat(yesterdayDwjz)
+      if (!yDwjz) return null
+
+      const points = list.map((item: any[]) => {
+        const timeStr = item[0] as string
+        const value = Number(item[1])
+        const growth = ((value - yDwjz) / yDwjz * 100)
+
+        return {
+          time: `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`,
+          value,
+          growth: parseFloat(growth.toFixed(2))
+        }
+      })
+
+      // [WHY] 交易时间缓存30秒，非交易时间缓存5分钟
+      cache.set(cacheKey, points, isTradingTime ? 30 : 300)
+      return points
+    }
+    return null
+  } catch (e) {
+    console.error('获取分时数据失败', code, e)
+    return null
+  }
+}
+
 // ========== 前十重仓股 ==========
 
 export interface HoldingStock {

@@ -27,7 +27,7 @@ echo -e "${GREEN}✓ Dev 服务器已停止${NC}"
 echo ""
 
 # 步骤 2: 构建项目
-echo -e "${YELLOW}[2/6] 构建项目...${NC}"
+echo -e "${YELLOW}[2/6] 构建项目...${NC}"  
 npm run build
 echo -e "${GREEN}✓ 项目构建完成${NC}"
 echo ""

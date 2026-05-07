@@ -2,11 +2,11 @@
 // [WHY] 首页 - 展示自选基金列表、市场概览和快捷入口
 // [WHAT] 支持下拉刷新、左滑删除、点击跳转搜索添加、设置提醒
 
-import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
 import { useHoldingStore } from '@/stores/holding'
-import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock } from '@/api/fundFast'
+import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock, fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
 import { fetchFinanceNews, type NewsItem, getTradingSession, type TradingSession } from '@/api/tiantianApi'
 import { showConfirmDialog, showToast } from 'vant'
 import FundCard from '@/components/FundCard.vue'
@@ -44,12 +44,154 @@ function closeTopHoldings() {
   topHoldingsModal.value.open = false
 }
 
+// 分时估值弹窗管理
+const intradayModal = ref<{ open: boolean; fund: any; data: IntradayPoint[]; loading: boolean }>({
+  open: false,
+  fund: null,
+  data: [],
+  loading: false
+})
+const intradayCanvasRef = ref<HTMLCanvasElement | null>(null)
+
+function drawIntradayChartOnCanvas(canvas: HTMLCanvasElement, data: IntradayPoint[]) {
+  if (!data || data.length === 0) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // 设置 canvas 尺寸
+  const dpr = window.devicePixelRatio || 1
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width * dpr
+  canvas.height = rect.height * dpr
+  ctx.scale(dpr, dpr)
+
+  const width = rect.width
+  const height = rect.height
+  const padding = { top: 10, right: 10, bottom: 20, left: 45 }
+  const chartWidth = width - padding.left - padding.right
+  const chartHeight = height - padding.top - padding.bottom
+
+  // 计算数据范围
+  const values = data.map(d => d.value)
+  const minVal = Math.min(...values)
+  const maxVal = Math.max(...values)
+  const startVal = data[0].value
+  const endVal = data[data.length - 1].value
+  const color = endVal >= startVal ? '#ff4d4f' : '#52c41a'
+
+  // 清空画布
+  ctx.clearRect(0, 0, width, height)
+
+  // 绘制网格线
+  ctx.strokeStyle = 'rgba(128,128,128,0.1)'
+  ctx.lineWidth = 0.5
+  for (let i = 0; i <= 4; i++) {
+    const y = padding.top + (chartHeight / 4) * i
+    ctx.beginPath()
+    ctx.moveTo(padding.left, y)
+    ctx.lineTo(width - padding.right, y)
+    ctx.stroke()
+  }
+
+  // 绘制Y轴标签
+  ctx.fillStyle = '#999'
+  ctx.font = '10px sans-serif'
+  ctx.textAlign = 'right'
+  for (let i = 0; i <= 4; i++) {
+    const val = maxVal - ((maxVal - minVal) / 4) * i
+    const y = padding.top + (chartHeight / 4) * i
+    ctx.fillText(val.toFixed(3), padding.left - 5, y + 3)
+  }
+
+  // 绘制X轴标签（时间）
+  ctx.textAlign = 'center'
+  const timeStep = Math.ceil(data.length / 5)
+  for (let i = 0; i < data.length; i += timeStep) {
+    const x = padding.left + (i / (data.length - 1)) * chartWidth
+    ctx.fillText(data[i].time, x, height - 5)
+  }
+
+  // 绘制折线
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  data.forEach((point, index) => {
+    const x = padding.left + (index / (data.length - 1)) * chartWidth
+    const y = padding.top + ((maxVal - point.value) / (maxVal - minVal)) * chartHeight
+    if (index === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  })
+  ctx.stroke()
+
+  // 绘制渐变填充
+  const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom)
+  gradient.addColorStop(0, color + '20')
+  gradient.addColorStop(1, color + '00')
+  ctx.fillStyle = gradient
+  ctx.beginPath()
+  data.forEach((point, index) => {
+    const x = padding.left + (index / (data.length - 1)) * chartWidth
+    const y = padding.top + ((maxVal - point.value) / (maxVal - minVal)) * chartHeight
+    if (index === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  })
+  ctx.lineTo(padding.left + chartWidth, height - padding.bottom)
+  ctx.lineTo(padding.left, height - padding.bottom)
+  ctx.closePath()
+  ctx.fill()
+}
+
+async function openIntradayModal(fund: any, event: Event) {
+  event.stopPropagation()
+  intradayModal.value = { open: true, fund, data: [], loading: true }
+  try {
+    const data = await fetchIntradayData(fund.code)
+    if (data) {
+      intradayModal.value.data = data
+    }
+  } catch (err) {
+    console.error('获取分时估值失败:', err)
+  } finally {
+    intradayModal.value.loading = false
+  }
+}
+
+function closeIntradayModal() {
+  intradayModal.value.open = false
+}
+
+// [WHY] 弹窗打开且数据就绪后绘制图表，需要多次尝试确保canvas已渲染
+function tryDrawIntradayChart(attempts = 0) {
+  if (!intradayCanvasRef.value || !intradayModal.value.data.length) {
+    if (attempts < 10) {
+      setTimeout(() => tryDrawIntradayChart(attempts + 1), 50)
+    }
+    return
+  }
+  drawIntradayChartOnCanvas(intradayCanvasRef.value, intradayModal.value.data)
+}
+
+// 监听弹窗打开，数据准备好后绘制图表
+watch(() => intradayModal.value.open, (open) => {
+  if (open && intradayModal.value.data.length > 0) {
+    nextTick(() => tryDrawIntradayChart())
+  }
+})
+
+// 监听数据变化，弹窗已打开时绘制图表
+watch(() => intradayModal.value.data, (data) => {
+  if (intradayModal.value.open && data.length > 0) {
+    nextTick(() => tryDrawIntradayChart())
+  }
+}, { deep: true })
+
 // 自动刷新开关状态
 const autoRefreshEnabled = ref(false)
 // 自动刷新定时器
-let autoRefreshInterval: ReturnType<typeof setInterval> | undefined
+let autoRefreshInterval: number | undefined
 // 交易状态更新定时器
-let tradingSessionInterval: ReturnType<typeof setInterval> | undefined
+let tradingSessionInterval: number | undefined
 
 // 监听自动刷新状态变化
 watch(autoRefreshEnabled, (newValue) => {
@@ -155,39 +297,42 @@ const sortDirection = ref<'up' | 'down' | 'none'>('down')
 // [WHAT] 当前筛选来源
 const currentSourceFilter = ref<string>('')
 
-// [WHAT] 过滤观察账户开关（true = 过滤掉观察账户，false = 显示所有）
-const filterObserve = ref<boolean>(true)
-
-// [WHAT] 排序后的持仓基金
-const sortedHoldings = computed(() => {
-  let funds = [...holdingStore.holdings]
-  
-  // [WHAT] 过滤观察账户
-  if (filterObserve.value) {
-    funds = funds.filter(fund => fund.source !== 'observe')
-  }
-  
-  // [WHAT] 按来源筛选
-  if (currentSourceFilter.value) {
-    funds = funds.filter(fund => fund.source === currentSourceFilter.value)
-  }
-  
+// [WHAT] 排序函数
+function sortFunds(funds: any[]) {
   if (sortDirection.value === 'up') {
-    // 从低到高排序
-    return funds.sort((a, b) => {
+    return [...funds].sort((a, b) => {
       const changeA = parseFloat(a.todayChange || '0')
       const changeB = parseFloat(b.todayChange || '0')
       return changeA - changeB
     })
   } else if (sortDirection.value === 'down') {
-    // 从高到低排序
-    return funds.sort((a, b) => {
+    return [...funds].sort((a, b) => {
       const changeA = parseFloat(a.todayChange || '0')
       const changeB = parseFloat(b.todayChange || '0')
       return changeB - changeA
     })
   }
-  return funds
+  return [...funds]
+}
+
+// [WHAT] 正常账户基金（非观察），受来源筛选影响
+const normalHoldings = computed(() => {
+  let funds = holdingStore.holdings.filter(fund => fund.source !== 'observe')
+  if (currentSourceFilter.value) {
+    funds = funds.filter(fund => fund.source === currentSourceFilter.value)
+  }
+  return sortFunds(funds)
+})
+
+// [WHAT] 观察账户基金，始终显示，不受来源筛选影响
+const observeHoldings = computed(() => {
+  const funds = holdingStore.holdings.filter(fund => fund.source === 'observe')
+  return sortFunds(funds)
+})
+
+// [WHAT] 排序持仓基金（兼容旧代码）
+const sortedHoldings = computed(() => {
+  return [...normalHoldings.value, ...observeHoldings.value]
 })
 
 // [WHAT] 排序持仓基金
@@ -197,13 +342,12 @@ function handleSort(direction: 'up' | 'down') {
 
 // [WHAT] 按来源筛选基金
 function filterBySource(source: string) {
-  // 切换来源筛选状态
   if (currentSourceFilter.value === source) {
     currentSourceFilter.value = ''
     showToast('已取消来源筛选')
   } else {
     currentSourceFilter.value = source
-    const sourceName = source === 'ali' ? '支付宝' : source === 'TX' ? '腾讯' : source === 'JD' ? '京东' : '观察'
+    const sourceName = source === 'ali' ? '支付宝' : source === 'TX' ? '腾讯' : source === 'JD' ? '京东' : source
     showToast(`已筛选 ${sourceName} 来源的基金`)
   }
 }
@@ -237,7 +381,7 @@ onMounted(async () => {
   // 初始化交易状态
   updateTradingSession()
   // 每秒更新交易状态，确保秒钟显示准确
-  tradingSessionInterval = setInterval(updateTradingSession, 1000)
+  tradingSessionInterval = window.setInterval(updateTradingSession, 1000)
 })
 
 onUnmounted(() => {
@@ -432,39 +576,6 @@ function goToDetail(code: string) {
     >
 
       
-      <!-- 全球指数（已隐藏，数据已合并到大盘指数区域） -->
-      <!-- <div class="global-indices" v-if="globalIndices.length > 0">
-        <div class="section-header" @click="showGlobalIndices = !showGlobalIndices">
-          <span>全球指数</span>
-          <van-icon :name="showGlobalIndices ? 'arrow-up' : 'arrow-down'" size="14" />
-        </div>
-        <div class="global-grid" v-show="showGlobalIndices">
-          <div 
-            v-for="idx in globalIndices" 
-            :key="idx.code" 
-            class="global-item"
-            :class="idx.changePercent >= 0 ? 'up' : 'down'"
-          >
-            <div class="global-name">
-              <span class="region-tag" :class="idx.region">{{ 
-                idx.region === 'cn' ? '中' : 
-                idx.region === 'hk' ? '港' : 
-                idx.region === 'us' ? '美' : 
-                idx.region === 'eu' ? '欧' : '亚' 
-              }}</span>
-              {{ idx.name }}
-            </div>
-            <div class="global-price">{{ idx.price > 1000 ? idx.price.toFixed(0) : idx.price.toFixed(2) }}</div>
-            <div class="global-change">
-              {{ idx.changePercent >= 0 ? '+' : '' }}{{ idx.changePercent.toFixed(2) }}%
-            </div>
-          </div>
-        </div>
-        <div class="expand-hint" v-show="!showGlobalIndices" @click="showGlobalIndices = true">
-          点击展开查看全球指数行情
-        </div>
-      </div>
-      
       <!-- 持仓趋势 -->
       <div class="market-overview" v-if="holdingStore.holdings.length > 0">
         <div class="overview-title">
@@ -491,20 +602,10 @@ function goToDetail(code: string) {
               </van-button>
             </div>
             <div class="source-buttons web-only">
-              <div class="filter-toggle">
-                <span class="filter-label">过滤</span>
-                <van-switch v-model="filterObserve" size="20" />
-              </div>
               <van-button 
                 size="small" 
                 class="source-button"
-                @click="filterBySource('observe')"
-              >
-                观察
-              </van-button>
-              <van-button 
-                size="small" 
-                class="source-button"
+                :class="{ active: currentSourceFilter === 'ali' }"
                 @click="filterBySource('ali')"
               >
                 <img src="@/assets/ali.jpg" class="source-icon" alt="支付宝" />
@@ -512,6 +613,7 @@ function goToDetail(code: string) {
               <van-button 
                 size="small" 
                 class="source-button"
+                :class="{ active: currentSourceFilter === 'TX' }"
                 @click="filterBySource('TX')"
               >
                 <img src="@/assets/TX.jpg" class="source-icon" alt="腾讯" />
@@ -519,6 +621,7 @@ function goToDetail(code: string) {
               <van-button 
                 size="small" 
                 class="source-button"
+                :class="{ active: currentSourceFilter === 'JD' }"
                 @click="filterBySource('JD')"
               >
                 <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
@@ -588,20 +691,10 @@ function goToDetail(code: string) {
             </div>
           </div>
           <div class="source-buttons">
-            <div class="filter-toggle">
-              <span class="filter-label">过滤</span>
-              <van-switch v-model="filterObserve" size="20" />
-            </div>
             <van-button 
               size="small" 
               class="source-button"
-              @click="filterBySource('observe')"
-            >
-              观察
-            </van-button>
-            <van-button 
-              size="small" 
-              class="source-button"
+              :class="{ active: currentSourceFilter === 'ali' }"
               @click="filterBySource('ali')"
             >
               <img src="@/assets/ali.jpg" class="source-icon" alt="支付宝" />
@@ -609,6 +702,7 @@ function goToDetail(code: string) {
             <van-button 
               size="small" 
               class="source-button"
+              :class="{ active: currentSourceFilter === 'TX' }"
               @click="filterBySource('TX')"
             >
               <img src="@/assets/TX.jpg" class="source-icon" alt="腾讯" />
@@ -616,6 +710,7 @@ function goToDetail(code: string) {
             <van-button 
               size="small" 
               class="source-button"
+              :class="{ active: currentSourceFilter === 'JD' }"
               @click="filterBySource('JD')"
             >
               <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
@@ -623,8 +718,9 @@ function goToDetail(code: string) {
           </div>
         </div>
         <div class="index-grid">
+          <!-- 正常账户基金 -->
           <div 
-            v-for="fund in sortedHoldings" 
+            v-for="fund in normalHoldings" 
             :key="fund.code" 
             class="index-item"
             :class="[fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'up' : 'down']"
@@ -804,10 +900,222 @@ function goToDetail(code: string) {
               <div class="index-holdings mobile-only" @click="openTopHoldings(fund, $event)">
                 <span class="top-holdings-label">前十大重仓股</span>
               </div>
+              <div class="intraday-section mobile-only" @click="openIntradayModal(fund, $event)">
+                <span class="intraday-label-mobile">当日分时图</span>
+              </div>
             </div>
             <div class="index-holdings web-only" @click="openTopHoldings(fund, $event)">
               <span class="top-holdings-label">前10大重仓股</span>
               <span class="top-holdings-arrow">›</span>
+            </div>
+            <div class="intraday-section web-only" @click="openIntradayModal(fund, $event)">
+              <div class="intraday-header">
+                <van-icon name="chart-trending-o" size="12" class="intraday-arrow" />
+                <span class="intraday-label">当日分时估值</span>
+              </div>
+            </div>
+          </div>
+          <!-- 观察基金分割线 -->
+          <div v-if="observeHoldings.length > 0" class="observe-divider">
+            <div class="observe-divider-line"></div>
+            <span class="observe-divider-text">观察</span>
+            <div class="observe-divider-line"></div>
+          </div>
+          <!-- 观察账户基金 -->
+          <div 
+            v-for="fund in observeHoldings" 
+            :key="fund.code" 
+            class="index-item"
+            :class="[fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'up' : 'down']"
+            @click="router.push(`/detail/${fund.code}`)"
+          >
+            <!-- 网页端布局 -->
+            <div class="index-name web-only">
+              <div class="fund-name-content">
+                <div class="fund-name-left">
+                  <img 
+                    v-if="fund.source === 'ali'" 
+                    src="@/assets/ali.jpg" 
+                    class="source-icon-small" 
+                    alt="支付宝" 
+                  />
+                  <img 
+                    v-else-if="fund.source === 'TX'" 
+                    src="@/assets/TX.jpg" 
+                    class="source-icon-small" 
+                    alt="腾讯" 
+                  />
+                  <img 
+                    v-else-if="fund.source === 'JD'" 
+                    src="@/assets/JD.jpg" 
+                    class="source-icon-small" 
+                    alt="京东" 
+                  />
+                  <img 
+                    v-else-if="fund.source === 'observe'" 
+                    :src="eyeIcon" 
+                    class="source-icon-small" 
+                    alt="观察" 
+                  />
+                </div>
+                <div class="fund-name-middle">
+                  <span 
+                    v-if="fund.isQDII" 
+                    class="qdii-tag"
+                  >
+                    QD
+                  </span>
+                </div>
+                <div class="fund-name-right">
+                  {{ fund.name }}
+                </div>
+              </div>
+            </div>
+            <div class="index-content web-only">
+              <div class="index-left">
+                <div class="fund-code">{{ fund.code }}</div>
+                <div class="fund-sectors">
+                  {{ fund.industrySectors || '未设置' }}
+                </div>
+              </div>
+              <div class="index-right">
+                <div class="index-change">
+                  <van-icon :name="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'arrow-up' : 'arrow-down'" size="14" />
+                  <span>{{ fund.todayChange ? (parseFloat(fund.todayChange) >= 0 ? '+' : '') + fund.todayChange + '%' : '--' }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="index-trend web-only" v-if="fund.trendPrediction">
+              <div class="trend-prediction">
+                <div class="trend-column trend-column-1">
+                  <div class="trend-item">
+                    <span class="trend-text" :class="fund.trendPrediction.trend === 'up' ? 'up' : fund.trendPrediction.trend === 'down' ? 'down' : ''">
+                      {{ fund.trendPrediction.trend === 'up' ? '看涨' : fund.trendPrediction.trend === 'down' ? '看跌' : '震荡' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="trend-column">
+                  <div class="trend-item">
+                    <span class="trend-label">{{ fund.dataSource === 'nav' ? '净值' : '估值' }}</span>
+                    <span class="trend-value" :class="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'up' : 'down'">
+                      {{ fund.currentValue?.toFixed(3) || '--' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="trend-column">
+                  <div class="trend-item">
+                    <span class="trend-label">支撑</span>
+                    <span class="trend-value down">{{ fund.trendPrediction.supportLevel?.toFixed(2) || '--' }}</span>
+                  </div>
+                </div>
+                <div class="trend-column">
+                  <div class="trend-item">
+                    <span class="trend-label">阻力</span>
+                    <span class="trend-value up">{{ fund.trendPrediction.resistanceLevel?.toFixed(2) || '--' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="index-bar web-only"></div>
+            
+            <!-- 移动端布局 -->
+            <div class="mobile-item-layout mobile-only">
+              <!-- 第一行：图标 + 基金名称 -->
+              <div class="mobile-item-row mobile-item-row-1">
+                <div class="fund-name-content">
+                  <div class="fund-name-left">
+                    <img 
+                      v-if="fund.source === 'ali'" 
+                      src="@/assets/ali.jpg" 
+                      class="source-icon-small" 
+                      alt="支付宝" 
+                    />
+                    <img 
+                      v-else-if="fund.source === 'TX'" 
+                      src="@/assets/TX.jpg" 
+                      class="source-icon-small" 
+                      alt="腾讯" 
+                    />
+                    <img 
+                      v-else-if="fund.source === 'JD'" 
+                      src="@/assets/JD.jpg" 
+                      class="source-icon-small" 
+                      alt="京东" 
+                    />
+                    <img 
+                      v-else-if="fund.source === 'observe'" 
+                      :src="eyeIcon" 
+                      class="source-icon-small" 
+                      alt="观察" 
+                    />
+                  </div>
+                  <div class="fund-name-middle">
+                    <span 
+                      v-if="fund.isQDII" 
+                      class="qdii-tag"
+                    >
+                      QD
+                    </span>
+                  </div>
+                  <div class="fund-name-right">
+                    {{ fund.name }}
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 第二行：基金代码 和 行业板块 -->
+              <div class="mobile-item-row mobile-item-row-2">
+                <div class="fund-code">{{ fund.code }}</div>
+                <div class="fund-sectors">
+                  {{ fund.industrySectors || '未设置' }}
+                </div>
+              </div>
+              
+              <!-- 第三行：涨跌幅模块 -->
+              <div class="mobile-item-row mobile-item-row-3">
+                <div class="index-change">
+                  <van-icon :name="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'arrow-up' : 'arrow-down'" size="14" />
+                  <span>{{ fund.todayChange ? (parseFloat(fund.todayChange) >= 0 ? '+' : '') + fund.todayChange + '%' : '--' }}</span>
+                </div>
+              </div>
+              
+              <!-- 第四行：趋势预测 -->
+              <div class="mobile-item-row mobile-item-row-4" v-if="fund.trendPrediction">
+                <div class="trend-prediction">
+                  <span class="trend-item trend-item-vertical">
+                    <span class="trend-text" :class="fund.trendPrediction.trend === 'up' ? 'up' : fund.trendPrediction.trend === 'down' ? 'down' : ''">
+                      {{ fund.trendPrediction.trend === 'up' ? '看涨' : fund.trendPrediction.trend === 'down' ? '看跌' : '震荡' }}
+                    </span>
+                    <span class="trend-value" :class="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'up' : 'down'">
+                      {{ fund.currentValue?.toFixed(3) || '--' }}
+                    </span>
+                  </span>
+                  <span class="trend-item trend-item-vertical">
+                    <span class="trend-label">支撑</span>
+                    <span class="trend-value down">{{ fund.trendPrediction.supportLevel?.toFixed(2) || '--' }}</span>
+                  </span>
+                  <span class="trend-item trend-item-vertical">
+                    <span class="trend-label">阻力</span>
+                    <span class="trend-value up">{{ fund.trendPrediction.resistanceLevel?.toFixed(2) || '--' }}</span>
+                  </span>
+                </div>
+              </div>
+              <div class="index-holdings mobile-only" @click="openTopHoldings(fund, $event)">
+                <span class="top-holdings-label">前十大重仓股</span>
+              </div>
+              <div class="intraday-section mobile-only" @click="openIntradayModal(fund, $event)">
+                <span class="intraday-label-mobile">当日分时图</span>
+              </div>
+            </div>
+            <div class="index-holdings web-only" @click="openTopHoldings(fund, $event)">
+              <span class="top-holdings-label">前10大重仓股</span>
+              <span class="top-holdings-arrow">›</span>
+            </div>
+            <div class="intraday-section web-only" @click="openIntradayModal(fund, $event)">
+              <div class="intraday-header">
+                <van-icon name="chart-trending-o" size="12" class="intraday-arrow" />
+                <span class="intraday-label">当日分时估值</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1064,6 +1372,46 @@ function goToDetail(code: string) {
           <van-loading size="24px">加载中...</van-loading>
         </div>
         <button class="top-holdings-close-btn" @click="topHoldingsModal.open = false">关闭</button>
+      </div>
+    </van-popup>
+
+    <!-- 当日分时估值弹窗 -->
+    <van-popup 
+      v-model:show="intradayModal.open" 
+      position="center" 
+      round 
+      :style="{ width: '92%', maxWidth: '480px', background: 'var(--bg-secondary)' }"
+    >
+      <div class="intraday-popup">
+        <div class="intraday-popup-header">
+          <div class="intraday-popup-title-row">
+            <van-icon name="chart-trending-o" size="20" class="intraday-popup-icon" />
+            <span class="intraday-popup-title">当日分时估值</span>
+          </div>
+        </div>
+        <div class="intraday-popup-fund-info">
+          <span class="intraday-popup-fund-name">{{ intradayModal.fund?.name }}</span>
+          <span class="intraday-popup-fund-code">#{{ intradayModal.fund?.code }}</span>
+        </div>
+        <div class="intraday-popup-chart" v-if="!intradayModal.loading">
+          <div v-if="intradayModal.data && intradayModal.data.length > 0" class="intraday-popup-chart-wrapper">
+            <div class="intraday-popup-summary">
+              <span class="intraday-popup-latest" :class="intradayModal.data[intradayModal.data.length - 1].growth >= 0 ? 'up' : 'down'">
+                {{ intradayModal.data[intradayModal.data.length - 1].value }}
+                ({{ intradayModal.data[intradayModal.data.length - 1].growth >= 0 ? '+' : '' }}{{ intradayModal.data[intradayModal.data.length - 1].growth }}%)
+              </span>
+              <span class="intraday-popup-time">{{ intradayModal.data[intradayModal.data.length - 1].time }}</span>
+            </div>
+            <canvas ref="intradayCanvasRef" class="intraday-popup-canvas"></canvas>
+          </div>
+          <div v-else class="intraday-popup-empty">
+            暂无估值数据
+          </div>
+        </div>
+        <div class="intraday-popup-loading" v-else>
+          <van-loading size="24px">加载中...</van-loading>
+        </div>
+        <button class="intraday-popup-close-btn" @click="closeIntradayModal">关闭</button>
       </div>
     </van-popup>
   </div>
@@ -2628,6 +2976,85 @@ function goToDetail(code: string) {
   margin-top: 4px;
 }
 
+/* ========== 当日分时估值 ========== */
+.intraday-section {
+  border-top: 1px solid var(--van-border-color, #ebedf0);
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.intraday-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.intraday-arrow {
+  color: #888;
+  transition: transform 0.2s;
+}
+
+.intraday-label {
+  font-size: 11px;
+  color: #888;
+  flex: 1;
+}
+
+.intraday-label-mobile {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  width: 100%;
+  display: block;
+  padding: 4px 0;
+}
+
+.intraday-time {
+  font-size: 10px;
+  color: #999;
+}
+
+.intraday-content {
+  padding: 0 12px 8px;
+}
+
+.intraday-loading {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+.intraday-chart-wrapper {
+  background: var(--bg-primary, rgba(0,0,0,0.02));
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.intraday-summary {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.intraday-latest {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.intraday-canvas {
+  width: 100%;
+  height: 140px;
+}
+
+.intraday-empty {
+  text-align: center;
+  padding: 20px 0;
+  font-size: 12px;
+  color: #999;
+}
+
 .mobile-item-row-5 {
   display: flex;
   align-items: center;
@@ -2783,5 +3210,158 @@ function goToDetail(code: string) {
   display: flex;
   justify-content: center;
   padding: 30px 0;
+}
+
+/* ========== 当日分时估值弹窗 ========== */
+.intraday-popup {
+  padding: 20px;
+}
+
+.intraday-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.intraday-popup-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.intraday-popup-icon {
+  color: var(--color-primary);
+}
+
+.intraday-popup-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.intraday-popup-fund-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.intraday-popup-fund-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.intraday-popup-fund-code {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.intraday-popup-chart {
+  min-height: 200px;
+}
+
+.intraday-popup-chart-wrapper {
+  background: var(--bg-primary, rgba(0,0,0,0.02));
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.intraday-popup-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.intraday-popup-latest {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.intraday-popup-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.intraday-popup-canvas {
+  width: 100%;
+  height: 220px;
+}
+
+.intraday-popup-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: #999;
+  font-size: 14px;
+}
+
+.intraday-popup-loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.intraday-popup-close-btn {
+  width: 100%;
+  height: 40px;
+  margin-top: 16px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #0ea5e9, #22d3ee);
+  color: #05263b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.intraday-popup-close-btn:hover {
+  opacity: 0.9;
+}
+
+.intraday-popup-close-btn:active {
+  opacity: 0.8;
+}
+
+/* ========== 观察基金分割线 ========== */
+.observe-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  margin: 4px 0;
+  grid-column: 1 / -1;
+}
+
+.observe-divider-line {
+  flex: 1;
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--border-color) 0px,
+    var(--border-color) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.observe-divider-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+@media (max-width: 767px) {
+  .observe-divider {
+    padding: 8px 4px;
+    margin: 2px 0;
+  }
+  
+  .observe-divider-text {
+    font-size: 11px;
+  }
 }
 </style>
