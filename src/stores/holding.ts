@@ -40,6 +40,8 @@ export interface HoldingWithProfit extends HoldingRecord {
   valueDate?: string
   /** 是否已更新（根据日期判断） */
   isUpdated?: boolean
+  /** 添加后累计涨跌幅（仅观察账户） */
+  addedGain?: number
 }
 
 export const useHoldingStore = defineStore('holding', () => {
@@ -243,6 +245,12 @@ export const useHoldingStore = defineStore('holding', () => {
     // 如果 dataSource 是 nav 且有今日净值，或者 QDII 有昨日净值
     const isUpdated = hasTodayNav || hasYesterdayNavForQDII || (data.dataSource === 'nav' && data.navDate === today)
 
+    // [WHAT] 计算添加后累计涨跌幅（用买入净值作为基准）
+    let addedGain: number | undefined
+    if (holding.buyNetValue && holding.buyNetValue > 0) {
+      addedGain = ((currentValue - holding.buyNetValue) / holding.buyNetValue) * 100
+    }
+
     // console.log('更新状态判断:', {
     //   code,
     //   isQDII,
@@ -271,7 +279,8 @@ export const useHoldingStore = defineStore('holding', () => {
       trendPrediction,
       dataSource: data.dataSource,
       valueDate: data.navDate || data.estimateTime?.split(' ')[0],
-      isUpdated
+      isUpdated,
+      addedGain
     }
 
     // 保存更新后的持仓到本地存储

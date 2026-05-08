@@ -924,14 +924,19 @@ function goToDetail(code: string) {
                   </span>
                 </div>
               </div>
-              <div class="index-holdings mobile-only" @click="openTopHoldings(fund, $event)">
+              <div class="index-holdings mobile-only" v-if="uiMode === 'full'" @click="openTopHoldings(fund, $event)">
                 <span class="top-holdings-label">前十大重仓股</span>
               </div>
               <div class="intraday-section mobile-only" v-if="uiMode === 'full'" @click="openIntradayModal(fund, $event)">
                 <span class="intraday-label-mobile">当日分时图</span>
               </div>
+              <div class="added-gain-section mobile-only" v-if="fund.addedGain !== undefined">
+                <span class="added-gain-label" :class="fund.addedGain >= 0 ? 'up' : 'down'">
+                  累计{{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%
+                </span>
+              </div>
             </div>
-            <div class="index-holdings web-only" @click="openTopHoldings(fund, $event)">
+            <div class="index-holdings web-only" v-if="uiMode === 'full'" @click="openTopHoldings(fund, $event)">
               <span class="top-holdings-label">前10大重仓股</span>
               <span class="top-holdings-arrow">›</span>
             </div>
@@ -941,11 +946,16 @@ function goToDetail(code: string) {
                 <span class="intraday-label">当日分时估值</span>
               </div>
             </div>
+            <div class="added-gain-section web-only" v-if="fund.addedGain !== undefined">
+              <span class="added-gain-label" :class="fund.addedGain >= 0 ? 'up' : 'down'">
+                添加后涨跌幅{{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%
+              </span>
+            </div>
           </div>
           <!-- 观察基金分割线 -->
           <div v-if="observeHoldings.length > 0" class="observe-divider">
             <div class="observe-divider-line"></div>
-            <span class="observe-divider-text">观察</span>
+            <span class="observe-divider-text">量化观察</span>
             <div class="observe-divider-line"></div>
           </div>
           <!-- 观察账户基金 -->
@@ -1127,14 +1137,19 @@ function goToDetail(code: string) {
                   </span>
                 </div>
               </div>
-              <div class="index-holdings mobile-only" @click="openTopHoldings(fund, $event)">
+              <div class="index-holdings mobile-only" v-if="uiMode === 'full'" @click="openTopHoldings(fund, $event)">
                 <span class="top-holdings-label">前十大重仓股</span>
               </div>
               <div class="intraday-section mobile-only" v-if="uiMode === 'full'" @click="openIntradayModal(fund, $event)">
                 <span class="intraday-label-mobile">当日分时图</span>
               </div>
+              <div class="added-gain-section mobile-only" v-if="fund.addedGain !== undefined">
+                <span class="added-gain-label" :class="fund.addedGain >= 0 ? 'up' : 'down'">
+                  累计{{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%
+                </span>
+              </div>
             </div>
-            <div class="index-holdings web-only" @click="openTopHoldings(fund, $event)">
+            <div class="index-holdings web-only" v-if="uiMode === 'full'" @click="openTopHoldings(fund, $event)">
               <span class="top-holdings-label">前10大重仓股</span>
               <span class="top-holdings-arrow">›</span>
             </div>
@@ -1143,6 +1158,11 @@ function goToDetail(code: string) {
                 <van-icon name="chart-trending-o" size="12" class="intraday-arrow" />
                 <span class="intraday-label">当日分时估值</span>
               </div>
+            </div>
+            <div class="added-gain-section web-only" v-if="fund.addedGain !== undefined">
+              <span class="added-gain-label" :class="fund.addedGain >= 0 ? 'up' : 'down'">
+                添加后涨跌幅{{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%
+              </span>
             </div>
           </div>
         </div>
@@ -2763,6 +2783,7 @@ function goToDetail(code: string) {
   .index-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 0px;
+    margin-top: 10px;
   }
   
   /* 移动端：item内部布局 */
@@ -3432,5 +3453,28 @@ function goToDetail(code: string) {
   .observe-divider-text {
     font-size: 11px;
   }
+}
+
+/* ========== 添加后涨幅 ========== */
+.added-gain-section {
+  border-top: 1px solid var(--van-border-color, #ebedf0);
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.added-gain-label {
+  display: block;
+  text-align: center;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.added-gain-label.up {
+  color: var(--up-color, #ff6b6b);
+}
+
+.added-gain-label.down {
+  color: var(--down-color, #51cf66);
 }
 </style>
