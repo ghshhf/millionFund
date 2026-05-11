@@ -223,11 +223,13 @@ async function selectFund(fund: FundInfo) {
   searchKeyword.value = ''
   searchResults.value = []
   
-  // [WHY] 获取当前净值
+  // [WHY] 获取最新净值（使用公布净值，非估值）
   showLoadingToast({ message: '获取净值...', forbidClick: true })
   try {
     const estimate = await fetchFundEstimate(fund.code)
-    currentNetValue.value = parseFloat(estimate.gsz) || parseFloat(estimate.dwjz) || 1
+    // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
+    // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
+    currentNetValue.value = parseFloat(estimate.dwjz) || parseFloat(estimate.gsz) || 1
     closeToast()
   } catch {
     closeToast()

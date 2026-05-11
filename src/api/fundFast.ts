@@ -104,8 +104,10 @@ function initJsonpCallback() {
         clearTimeout(req.timeout)
         pendingNetValueRequests.splice(navIndex, 1)
 
+        // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
+        // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
         const result = {
-          netValue: parseFloat(data.gsz || data.dwjz || '0') || 0,
+          netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
           date: data.jzrq || '',
           changeRate: parseFloat(data.gszzl || '0') || 0
         }
