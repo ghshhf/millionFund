@@ -11,10 +11,8 @@ import { fetchFinanceNews, type NewsItem, getTradingSession, type TradingSession
 import { showConfirmDialog, showToast } from 'vant'
 import FundCard from '@/components/FundCard.vue'
 import FundGridItem from '@/components/FundGridItem.vue'
-import upIcon from '@/assets/up.png'
-import upSIcon from '@/assets/upS.png'
-import downIcon from '@/assets/down.png'
-import downSIcon from '@/assets/downS.png'
+import riseW from '@/assets/riseW.jpg'
+import downW from '@/assets/downW.jpg'
 
 const router = useRouter()
 const fundStore = useFundStore()
@@ -595,22 +593,20 @@ function goToDetail(code: string) {
             <span>持仓趋势</span>
             <!-- 网页端：按钮在第一行 -->
             <div class="sort-buttons web-only">
-              <van-button 
-                size="small" 
-                icon="arrow-up" 
+              <img 
+                :src="riseW" 
+                class="sort-web-icon"
+                :class="{ active: sortDirection === 'up' }"
                 @click="handleSort('up')"
-                :type="sortDirection === 'up' ? 'primary' : 'default'"
-              >
-                升序
-              </van-button>
-              <van-button 
-                size="small" 
-                icon="arrow-down" 
+                alt="升序" 
+              />
+              <img 
+                :src="downW" 
+                class="sort-web-icon"
+                :class="{ active: sortDirection === 'down' }"
                 @click="handleSort('down')"
-                :type="sortDirection === 'down' ? 'primary' : 'default'"
-              >
-                降序
-              </van-button>
+                alt="降序" 
+              />
             </div>
             <div class="source-buttons web-only">
               <div class="ui-mode-toggle">
@@ -702,7 +698,7 @@ function goToDetail(code: string) {
               @click="handleSort('up')"
             >
               <img 
-                :src="sortDirection === 'up' ? upSIcon : upIcon" 
+                :src="riseW" 
                 class="sort-icon" 
                 alt="升序" 
               />
@@ -713,7 +709,7 @@ function goToDetail(code: string) {
               @click="handleSort('down')"
             >
               <img 
-                :src="sortDirection === 'down' ? downSIcon : downIcon" 
+                :src="downW" 
                 class="sort-icon" 
                 alt="降序" 
               />
@@ -1260,6 +1256,25 @@ function goToDetail(code: string) {
   display: flex;
   gap: 8px;
   margin-left: 12px;
+}
+
+.sort-web-icon {
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.sort-web-icon:hover {
+  opacity: 0.8;
+}
+
+.sort-web-icon.active {
+  opacity: 1;
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .source-buttons {
