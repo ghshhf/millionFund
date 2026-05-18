@@ -60,6 +60,14 @@ export interface HoldingRecord {
   isQDII?: boolean
   /** 创建时间 */
   createdAt: number
+  /** 当前净值（用于计算添加后涨幅） */
+  currentValue?: number
+  /** 添加后累计涨跌幅（仅观察账户） */
+  addedGain?: number
+  /** 持仓市值（用户调整时保存） */
+  marketValue?: number
+  /** 持仓收益（用户调整时保存） */
+  profit?: number
 }
 
 /**

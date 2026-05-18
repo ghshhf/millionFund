@@ -276,12 +276,12 @@ function editHolding() {
     return
   }
   
-  // [WHAT] 填充当前持仓数据
+  // [WHAT] 填充当前持仓数据（优先使用保存的市值和收益）
   costFormData.value = {
     code: holding.code,
     name: holding.name,
-    amount: (holding.marketValue || 0).toString(),
-    profit: holding.profit?.toString() || '0'
+    amount: (holding.marketValue || holding.shares * holding.currentValue || 0).toString(),
+    profit: (holding.profit !== undefined ? holding.profit : (holding.currentValue && holding.buyNetValue ? (holding.currentValue - holding.buyNetValue) * holding.shares : 0)).toString()
   }
   showCostDialog.value = true
 }
@@ -334,30 +334,42 @@ async function submitCostAdjust() {
     const costMarketValue = marketValue - profit
     const costNetValue = newShares > 0 ? costMarketValue / newShares : currentNetValue
     
+    const addedGain = ((currentNetValue - costNetValue) / currentNetValue) * 100
+
     console.log('[调整成本] 计算结果:', {
       用户输入市值: marketValue,
       用户输入收益: profit,
       当前净值: currentNetValue,
       计算份额: newShares.toFixed(2),
       成本市值: costMarketValue.toFixed(2),
-      成本净值: costNetValue.toFixed(4)
+      成本净值: costNetValue.toFixed(4),
+      累计涨幅: addedGain.toFixed(2) + '%'
     })
     
-    // [WHAT] 更新持仓记录
     const record = {
-      ...holding,
-      marketValue: marketValue,
-      profit: 0,
+      code: holding.code,
+      name: holding.name,
       buyNetValue: costNetValue,
-      shares: newShares
+      shares: newShares,
+      buyDate: holding.buyDate,
+      holdingDays: holding.holdingDays,
+      industrySectors: holding.industrySectors,
+      source: holding.source,
+      isQDII: holding.isQDII,
+      createdAt: holding.createdAt,
+      currentValue: currentNetValue,
+      addedGain: addedGain,
+      marketValue: marketValue,
+      profit: profit
     }
     
     console.log('[调整成本] 更新持仓记录', {
       code: record.code,
       name: record.name,
-      marketValue: record.marketValue,
       buyNetValue: record.buyNetValue,
-      shares: record.shares
+      shares: record.shares,
+      currentValue: record.currentValue,
+      addedGain: record.addedGain.toFixed(2) + '%'
     })
     holdingStore.addOrUpdateHolding(record)
     showToast('成本调整成功')

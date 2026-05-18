@@ -245,10 +245,10 @@ export const useHoldingStore = defineStore('holding', () => {
     // 如果 dataSource 是 nav 且有今日净值，或者 QDII 有昨日净值
     const isUpdated = hasTodayNav || hasYesterdayNavForQDII || (data.dataSource === 'nav' && data.navDate === today)
 
-    // [WHAT] 计算添加后累计涨跌幅（用买入净值作为基准）
+    // [WHAT] 计算添加后累计涨跌幅（与持有收益率公式一致）
     let addedGain: number | undefined
-    if (holding.buyNetValue && holding.buyNetValue > 0) {
-      addedGain = ((currentValue - holding.buyNetValue) / holding.buyNetValue) * 100
+    if (holding.buyNetValue && holding.buyNetValue > 0 && currentValue > 0) {
+      addedGain = ((currentValue - holding.buyNetValue) / currentValue) * 100
     }
 
     // console.log('更新状态判断:', {
@@ -292,21 +292,26 @@ export const useHoldingStore = defineStore('holding', () => {
    * @param record 持仓记录
    */
   function addOrUpdateHolding(record: HoldingRecord) {
-    upsertHolding(record)
-
     const index = holdings.value.findIndex((h) => h.code === record.code)
+
     if (index > -1) {
+      const existingHolding = holdings.value[index]
       const updatedHolding = {
-        ...holdings.value[index],
+        ...existingHolding,
         ...record,
         loading: false
       }
+
+      upsertHolding(updatedHolding)
       holdings.value.splice(index, 1, updatedHolding)
     } else {
-      holdings.value.push({
+      const newHolding = {
         ...record,
         loading: false
-      })
+      }
+
+      upsertHolding(newHolding)
+      holdings.value.push(newHolding)
     }
   }
 
