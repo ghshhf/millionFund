@@ -555,6 +555,12 @@ function goToDetail(code: string) {
     <div class="top-header">
       <div class="header-left">
         <span class="app-title">AI 百万实盘</span>
+        <div class="reference-ma-badge header-ma-badge">
+          <span class="reference-ma-label">参考均线</span>
+          <span class="reference-ma-value" :class="hs300ChangePercent >= 0 ? 'up' : 'down'">
+            {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
+          </span>
+        </div>
       </div>
       <!-- 网页端：显示搜索框 -->
       <div class="search-bar web-only" @click="goToSearch">
@@ -612,6 +618,14 @@ function goToDetail(code: string) {
           <div class="title-left">
             <span class="live-dot" :class="tradingStatus.class"></span>
             <span>持仓趋势</span>
+            <div class="mobile-profit-summary mobile-only">
+              <span :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
+                {{ totalTodayProfitPercent >= 0 ? '+' : '' }}{{ totalTodayProfitPercent.toFixed(2) }}%
+              </span>
+              <span :class="totalTodayProfit >= 0 ? 'up' : 'down'">
+                盈亏{{ Math.round(totalTodayProfit) }}
+              </span>
+            </div>
             <!-- 网页端：按钮在第一行 -->
             <div class="sort-buttons web-only">
               <img 
@@ -666,12 +680,6 @@ function goToDetail(code: string) {
               >
                 <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
               </van-button>
-              <div class="reference-ma-badge">
-                <span class="reference-ma-label">参考均线</span>
-                <span class="reference-ma-value" :class="hs300ChangePercent >= 0 ? 'up' : 'down'">
-                  {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
-                </span>
-              </div>
             </div>
           </div>
           <div class="holding-stats">
@@ -691,22 +699,6 @@ function goToDetail(code: string) {
             <div class="trading-status" :class="tradingStatus.class">
               <span class="status-text">{{ tradingStatus.text }}</span>
               <span class="status-time">{{ tradingStatus.subText }}</span>
-            </div>
-          </div>
-        </div>
-        <!-- 移动端：利润率和今日盈亏 -->
-        <div class="profit-row mobile-only">
-          <div class="profit-section">
-            <div class="profit-item" :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
-              <span class="profit-label">利润率</span>
-              <span class="profit-percent" :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
-                {{ totalTodayProfitPercent >= 0 ? '+' : '' }}{{ totalTodayProfitPercent.toFixed(2) }}%
-              </span>
-            </div>
-            <div class="profit-divider"></div>
-            <div class="profit-item" :class="totalTodayProfit >= 0 ? 'up' : 'down'">
-              <span class="profit-label">今日盈亏</span>
-              <span class="profit-value">{{ totalTodayProfit >= 0 ? '+' : '' }}{{ totalTodayProfit.toFixed(2) }}元</span>
             </div>
           </div>
         </div>
@@ -773,12 +765,6 @@ function goToDetail(code: string) {
             >
               <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
             </van-button>
-            <div class="reference-ma-badge">
-              <span class="reference-ma-label">参考均线</span>
-              <span class="reference-ma-value" :class="hs300ChangePercent >= 0 ? 'up' : 'down'">
-                {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
-              </span>
-            </div>
           </div>
         </div>
         <div class="index-grid">
@@ -1140,6 +1126,12 @@ function goToDetail(code: string) {
 
 .header-left {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.header-ma-badge {
+  margin-left: 50px;
 }
 
 .app-title {
@@ -1261,6 +1253,35 @@ function goToDetail(code: string) {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.mobile-profit-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.mobile-profit-summary span {
+  margin-right: 10px;
+}
+
+.mobile-profit-summary span:last-child {
+  margin-right: 0;
+}
+
+.mobile-profit-summary .up {
+  color: var(--color-up);
+}
+
+.mobile-profit-summary .down {
+  color: var(--color-down);
 }
 
 .update-status {
