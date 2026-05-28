@@ -270,9 +270,9 @@ const combinedIndices = computed(() => {
   return result
 })
 
-// [WHAT] 计算当日盈亏总和（只计算当前筛选后显示的基金）
+// [WHAT] 计算当日盈亏总和（只计算非观察账户）
 const totalTodayProfit = computed(() => {
-  return sortedHoldings.value.reduce((total, fund) => {
+  return normalHoldings.value.reduce((total, fund) => {
     if (fund.todayProfit) {
       return total + (typeof fund.todayProfit === 'string' ? parseFloat(fund.todayProfit) : fund.todayProfit)
     }
@@ -280,15 +280,36 @@ const totalTodayProfit = computed(() => {
   }, 0)
 })
 
-// [WHAT] 计算当日收益百分比（只计算当前筛选后显示的基金）
+// [WHAT] 计算当日收益百分比（只计算非观察账户）
 const totalTodayProfitPercent = computed(() => {
-  const totalMarketValue = sortedHoldings.value.reduce((total, fund) => {
+  const totalMarketValue = normalHoldings.value.reduce((total, fund) => {
     return total + (fund.marketValue || 0)
   }, 0)
   
   if (totalMarketValue === 0) return 0
   
   return (totalTodayProfit.value / totalMarketValue) * 100
+})
+
+// [WHAT] 计算观察账户当日收益
+const observeTodayProfit = computed(() => {
+  return observeHoldings.value.reduce((total, fund) => {
+    if (fund.todayProfit) {
+      return total + (typeof fund.todayProfit === 'string' ? parseFloat(fund.todayProfit) : fund.todayProfit)
+    }
+    return total
+  }, 0)
+})
+
+// [WHAT] 计算观察账户当日收益率
+const observeTodayProfitPercent = computed(() => {
+  const totalMarketValue = observeHoldings.value.reduce((total, fund) => {
+    return total + (fund.marketValue || 0)
+  }, 0)
+  
+  if (totalMarketValue === 0) return 0
+  
+  return (observeTodayProfit.value / totalMarketValue) * 100
 })
 
 // [WHAT] 排序方向
@@ -773,6 +794,13 @@ function goToDetail(code: string) {
           <div v-if="observeHoldings.length > 0" class="observe-divider">
             <div class="observe-divider-line"></div>
             <span class="observe-divider-text">量化观察</span>
+            <span 
+              class="observe-profit-badge" 
+              :class="observeTodayProfitPercent >= 0 ? 'up' : 'down'"
+              v-if="observeHoldings.length > 0"
+            >
+              {{ observeTodayProfitPercent >= 0 ? '+' : '' }}{{ observeTodayProfitPercent.toFixed(2) }}%
+            </span>
             <div class="observe-divider-line"></div>
           </div>
           <FundGridItem
@@ -3140,6 +3168,26 @@ function goToDetail(code: string) {
   color: var(--text-secondary);
   white-space: nowrap;
   font-weight: 500;
+}
+
+.observe-profit-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-number);
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
+.observe-profit-badge.up {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.observe-profit-badge.down {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
 }
 
 @media (max-width: 767px) {
