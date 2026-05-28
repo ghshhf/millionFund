@@ -6,6 +6,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHoldingStore } from '@/stores/holding'
+import { useAITrackingStore } from '@/stores/aiTracking'
 import { searchFund, fetchFundEstimate } from '@/api/fund'
 import { fetchLatestNetValue } from '@/api/fundFast'
 import { showConfirmDialog, showToast, showLoadingToast, closeToast } from 'vant'
@@ -17,6 +18,7 @@ import ScreenshotImport from '@/components/ScreenshotImport.vue'
 
 const router = useRouter()
 const holdingStore = useHoldingStore()
+const aiTrackingStore = useAITrackingStore()
 
 // ========== 表单相关 ==========
 const showAddDialog = ref(false)
@@ -379,8 +381,8 @@ function onImported(count: number) {
 
 // [WHAT] 备份持仓数据
 async function backupHoldings() {
-  if (holdingStore.holdings.length === 0) {
-    showToast('暂无持仓数据可备份')
+  if (holdingStore.holdings.length === 0 && aiTrackingStore.records.length === 0) {
+    showToast('暂无数据可备份')
     return
   }
   
@@ -405,11 +407,24 @@ async function backupHoldings() {
     return rest
   })
   
+  // AI追踪数据备份（只保留基金代码和调仓净值）
+  const aiTrackingForBackup = aiTrackingStore.records.map(record => ({
+    sellCode: record.sellCode,
+    sellName: record.sellName,
+    sellNav: record.sellNav,
+    buyCode: record.buyCode,
+    buyName: record.buyName,
+    buyNav: record.buyNav,
+    date: record.date,
+    createdAt: record.createdAt
+  }))
+  
   const backupData = {
     version: '1.0',
     exportDate: new Date().toISOString(),
     holdings: holdingsForBackup,
-    summary: holdingStore.summary
+    summary: holdingStore.summary,
+    aiTracking: aiTrackingForBackup
   }
   
   // 转换为 JSON 字符串
@@ -495,6 +510,11 @@ function restoreHoldings() {
           
           // 刷新持仓状态
           holdingStore.initHoldings()
+          
+          // 恢复AI追踪数据
+          if (jsonData.aiTracking && Array.isArray(jsonData.aiTracking)) {
+            aiTrackingStore.importRecords(jsonData.aiTracking)
+          }
           
           showToast('恢复成功')
         } catch (error) {

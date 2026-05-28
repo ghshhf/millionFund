@@ -29,6 +29,12 @@ const router = createRouter({
       name: 'detail',
       component: () => import('@/views/Detail.vue'),
       meta: { title: '基金详情' }
+    },
+    {
+      path: '/ai-tracking',
+      name: 'ai-tracking',
+      component: () => import('@/views/AITracking.vue'),
+      meta: { title: 'AI追踪' }
     }
   ]
 })

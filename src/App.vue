@@ -71,7 +71,8 @@ watch(
   (name) => {
     const tabMap: Record<string, string> = {
       home: 'home',
-      holding: 'holding'
+      holding: 'holding',
+      'ai-tracking': 'ai'
     }
     if (name && tabMap[name as string]) {
       activeTab.value = tabMap[name as string]
@@ -89,6 +90,10 @@ function onTabChange(name: string | number) {
   if (routeMap[name as string]) {
     router.push(routeMap[name as string])
   }
+}
+
+function goToAITracking() {
+  router.push('/ai-tracking')
 }
 </script>
 
@@ -115,6 +120,11 @@ function onTabChange(name: string | number) {
       @change="onTabChange"
     >
       <van-tabbar-item name="holding" icon="balance-list-o">我的持仓</van-tabbar-item>
+      <div class="tabbar-center-placeholder" :class="{ 'is-active': activeTab === 'ai' }" @click="goToAITracking">
+        <div class="tabbar-raised-button">
+          <span>AI追踪</span>
+        </div>
+      </div>
       <van-tabbar-item name="home" icon="home-o">趋势行情</van-tabbar-item>
     </van-tabbar>
   </div>
@@ -186,5 +196,43 @@ function onTabChange(name: string | number) {
   background: linear-gradient(180deg, #0ea5e9, #22d3ee) !important;
   color: #05263b !important;
   font-weight: 600;
+}
+
+/* 中间占位区域 - 只占小部分宽度 */
+.tabbar-center-placeholder {
+  flex: 0 0 60px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  position: relative;
+}
+
+/* 突出圆形按钮 - 上半圆突出，下半圆在tabbar内 */
+.tabbar-raised-button {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 -2px 10px rgba(102, 126, 234, 0.5);
+  z-index: 10;
+  margin-top: -45px;
+  transition: all 0.3s;
+}
+
+/* 选中时的蓝色渐变 */
+.tabbar-center-placeholder.is-active .tabbar-raised-button {
+  background: linear-gradient(180deg, #0ea5e9, #22d3ee);
+  box-shadow: 0 -2px 10px rgba(14, 165, 233, 0.5);
+}
+
+.tabbar-raised-button span {
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 </style>
