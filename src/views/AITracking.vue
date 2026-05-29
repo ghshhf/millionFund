@@ -24,8 +24,8 @@
         <div class="record-header">
           <span class="record-date">{{ formatDate(record.date) }}</span>
           <span class="record-status" :class="getStatusClass(record)">{{ getStatusText(record) }}</span>
+          <span class="record-calc" v-html="getCalcProcessCombined(record)"></span>
         </div>
-        <div class="record-calc">{{ getCalcProcessCombined(record) }}</div>
         <div class="record-content">
           <div class="fund-item sell">
             <div class="fund-label">卖</div>
@@ -33,10 +33,13 @@
               <div class="fund-name">{{ record.sellName || record.sellCode }}</div>
               <div class="fund-row">
                 <span class="fund-code">{{ record.sellCode }}</span>
-                <span class="fund-change" :class="getChangeClass(record, 'sell')">
+                <span class="fund-change-mobile" :class="getChangeClass(record, 'sell')">
                   {{ getChangeText(record, 'sell') }}
                 </span>
               </div>
+            </div>
+            <div class="fund-change-right" :class="getChangeClass(record, 'sell')">
+              {{ getChangeText(record, 'sell') }}
             </div>
           </div>
           <div class="fund-item buy">
@@ -45,10 +48,13 @@
               <div class="fund-name">{{ record.buyName || record.buyCode }}</div>
               <div class="fund-row">
                 <span class="fund-code">{{ record.buyCode }}</span>
-                <span class="fund-change" :class="getChangeClass(record, 'buy')">
+                <span class="fund-change-mobile" :class="getChangeClass(record, 'buy')">
                   {{ getChangeText(record, 'buy') }}
                 </span>
               </div>
+            </div>
+            <div class="fund-change-right" :class="getChangeClass(record, 'buy')">
+              {{ getChangeText(record, 'buy') }}
             </div>
           </div>
         </div>
@@ -372,7 +378,7 @@ function getCalcProcessCombined(record: AITrackingRecord) {
   const sellChange = ((sellPrice - sellNav) / sellNav) * 100
   const buyChange = ((buyPrice - buyNav) / buyNav) * 100
   
-  return `卖出: ${sellPrice.toFixed(4)} - ${sellNav.toFixed(4)} = ${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}% 买入: ${buyPrice.toFixed(4)} - ${buyNav.toFixed(4)} = ${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
+  return `卖出: ${sellPrice.toFixed(4)} - <span style="color:#1989fa">${sellNav.toFixed(4)}</span> = ${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}% 买入: ${buyPrice.toFixed(4)} - <span style="color:#1989fa">${buyNav.toFixed(4)}</span> = ${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
 }
 
 function getStatusText(record: AITrackingRecord): string {
@@ -504,7 +510,8 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-number);
-  margin-bottom: 12px;
+  display: block;
+  margin-top: 4px;
 }
 
 .record-status.success {
@@ -593,12 +600,71 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.fund-change.up {
+.fund-change.up,
+.fund-change-mobile.up,
+.fund-change-right.up {
   color: var(--color-up);
 }
 
-.fund-change.down {
+.fund-change.down,
+.fund-change-mobile.down,
+.fund-change-right.down {
   color: var(--color-down);
+}
+
+@media (min-width: 768px) {
+  .fund-item {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .fund-label {
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+    align-self: center;
+    flex-shrink: 0;
+  }
+
+  .fund-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .fund-name {
+    font-size: 14px;
+    max-width: 160px;
+  }
+
+  .fund-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .fund-change-mobile {
+    display: none;
+  }
+
+  .fund-change-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 28px;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 100px;
+  }
+}
+
+.fund-change-mobile {
+  display: inline;
+}
+
+.fund-change-right {
+  display: none;
 }
 
 .calc-process {
@@ -609,9 +675,11 @@ onUnmounted(() => {
 }
 
 .fund-nav {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   font-family: var(--font-number);
+  color: #1989fa;
+  margin: 0 6px;
 }
 
 .record-actions {
@@ -649,3 +717,5 @@ onUnmounted(() => {
   }
 }
 </style>
+
+
