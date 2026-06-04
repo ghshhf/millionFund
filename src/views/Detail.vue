@@ -537,6 +537,15 @@ function formatNum(num: number, decimals = 2): string {
   return num.toFixed(decimals)
 }
 
+function formatMoney(num: number): string {
+  const prefix = num >= 0 ? '' : '-'
+  const absNum = Math.abs(num)
+  if (absNum >= 10000) {
+    return prefix + (absNum / 10000).toFixed(2) + '万'
+  }
+  return prefix + absNum.toFixed(2)
+}
+
 function formatPercent(num: number): string {
   const prefix = num >= 0 ? '+' : ''
   return `${prefix}${num.toFixed(2)}%`
@@ -562,6 +571,13 @@ function formatPercent(num: number): string {
             <span class="estimate-tag">
               {{ fundInfo?.dataSource === 'nav' ? '净值' : '估值' }} {{ fundInfo?.gsz ? parseFloat(fundInfo.gsz).toFixed(4) : '--' }}
             </span>
+          </div>
+          <div v-if="holdingDetails" class="fund-info-row holding-info-row">
+            <span class="fund-code">市值 {{ formatMoney(holdingDetails.amount) }}</span>
+            <span class="info-divider">|</span>
+            <span class="estimate-tag">收益 {{ formatMoney(holdingDetails.profit) }}</span>
+            <span class="info-divider">|</span>
+            <span class="estimate-tag">占比 {{ holdingDetails.ratio.toFixed(2) }}%</span>
           </div>
         </div>
       </div>
@@ -1374,8 +1390,8 @@ function formatPercent(num: number): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .fund-code {
@@ -1398,6 +1414,16 @@ function formatPercent(num: number): string {
 .estimate-tag {
   font-weight: 600;
   font-size: 13px;
+}
+
+.holding-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
 .estimate-tag.up {
@@ -1602,6 +1628,7 @@ function formatPercent(num: number): string {
   margin: 0 12px 12px;
   border-radius: 12px;
   overflow: hidden;
+  padding-top: 20px;
 }
 
 .chart-header {
