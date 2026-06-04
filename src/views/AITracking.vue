@@ -187,7 +187,7 @@ async function fetchFundInfo(type: 'sell' | 'buy') {
 
 async function confirmAddRecord() {
   if (!newRecord.value.sellCode || !newRecord.value.buyCode) {
-    showToast('请填写基金代码')
+    showToast({ message: '请填写基金代码', duration: 2000 })
     return
   }
 
@@ -198,6 +198,8 @@ async function confirmAddRecord() {
     let buyName = newRecord.value.buyName
     let sellNav = 0
     let buyNav = 0
+    let sellNavEstimated = false
+    let buyNavEstimated = false
     const targetDate = newRecord.value.date || new Date().toISOString().split('T')[0]
 
     if (newRecord.value.date) {
@@ -217,37 +219,49 @@ async function confirmAddRecord() {
         sellNav = sellRecord.netValue
         buyNav = buyRecord.netValue
       } else {
-        if (!sellRecord) {
-          sellName = (newRecord.value.sellName || newRecord.value.sellCode) + ' (未查询到净值)'
-        }
-        if (!buyRecord) {
-          buyName = (newRecord.value.buyName || newRecord.value.buyCode) + ' (未查询到净值)'
-        }
-        if (!sellRecord && !buyRecord) {
-          showToast('两只基金的净值都未查询到')
+        sellNavEstimated = true
+        buyNavEstimated = true
+        const [sellInfo, buyInfo] = await Promise.all([
+          fetchFundAccurateData(newRecord.value.sellCode),
+          fetchFundAccurateData(newRecord.value.buyCode)
+        ])
+        if (sellInfo && sellInfo.currentValue > 0) {
+          sellName = sellInfo.name
+          sellNav = sellInfo.currentValue
+        } else {
+          showToast({ message: '获取卖出基金信息失败', duration: 2000 })
           closeToast()
           return
         }
-        showToast('部分基金净值未查询到')
+        if (buyInfo && buyInfo.currentValue > 0) {
+          buyName = buyInfo.name
+          buyNav = buyInfo.currentValue
+        } else {
+          showToast({ message: '获取买入基金信息失败', duration: 2000 })
+          closeToast()
+          return
+        }
       }
     } else {
+      sellNavEstimated = true
+      buyNavEstimated = true
       const [sellInfo, buyInfo] = await Promise.all([
         fetchFundAccurateData(newRecord.value.sellCode),
         fetchFundAccurateData(newRecord.value.buyCode)
       ])
-      if (sellInfo) {
+      if (sellInfo && sellInfo.currentValue > 0) {
         sellName = sellInfo.name
         sellNav = sellInfo.currentValue
       } else {
-        showToast('获取卖出基金信息失败')
+        showToast({ message: '获取卖出基金信息失败或无估值数据', duration: 2000 })
         closeToast()
         return
       }
-      if (buyInfo) {
+      if (buyInfo && buyInfo.currentValue > 0) {
         buyName = buyInfo.name
         buyNav = buyInfo.currentValue
       } else {
-        showToast('获取买入基金信息失败')
+        showToast({ message: '获取买入基金信息失败或无估值数据', duration: 2000 })
         closeToast()
         return
       }
@@ -257,24 +271,26 @@ async function confirmAddRecord() {
       sellCode: newRecord.value.sellCode,
       sellName: sellName,
       sellNav: sellNav,
+      sellNavEstimated: sellNavEstimated,
       buyCode: newRecord.value.buyCode,
       buyName: buyName,
       buyNav: buyNav,
+      buyNavEstimated: buyNavEstimated,
       date: targetDate
     })
 
-    showToast('添加成功')
+    showToast({ message: '添加成功', duration: 2000 })
     resetNewRecord()
     showAddModal.value = false
   } catch (e) {
-    showToast('添加失败')
+    showToast({ message: '添加失败', duration: 2000 })
     console.error(e)
   }
 }
 
 function deleteRecord(id: string) {
   aiTrackingStore.removeRecord(id)
-  showToast('删除成功')
+  showToast({ message: '删除成功', duration: 2000 })
 }
 
 function selectRecord(record: AITrackingRecord) {
@@ -297,9 +313,9 @@ async function refreshPrices() {
   
   try {
     await fetchCurrentPrices()
-    showToast('刷新成功')
+    showToast({ message: '刷新成功', duration: 2000 })
   } catch (e) {
-    showToast('刷新失败')
+    showToast({ message: '刷新失败', duration: 2000 })
   } finally {
     isRefreshing.value = false
     closeToast()
@@ -311,13 +327,13 @@ watch(autoRefreshEnabled, (newValue) => {
     autoRefreshInterval = window.setInterval(() => {
       fetchCurrentPrices()
     }, 60000)
-    showToast('自动刷新已开启')
+    showToast({ message: '自动刷新已开启', duration: 2000 })
   } else {
     if (autoRefreshInterval) {
       clearInterval(autoRefreshInterval)
       autoRefreshInterval = null
     }
-    showToast('自动刷新已关闭')
+    showToast({ message: '自动刷新已关闭', duration: 2000 })
   }
 })
 
@@ -334,6 +350,49 @@ async function fetchCurrentPrices() {
       fundPrices.value[code] = info?.currentValue || 0
     } catch (e) {
       console.error(`Failed to fetch price for ${code}:`, e)
+    }
+  }
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (const record of records.value) {
+    const recordDate = new Date(record.date)
+    recordDate.setHours(0, 0, 0, 0)
+
+    const needUpdateSell = record.sellNavEstimated
+    const needUpdateBuy = record.buyNavEstimated
+
+    if (needUpdateSell || needUpdateBuy) {
+      const historyDays = Math.ceil((today.getTime() - recordDate.getTime()) / (1000 * 60 * 60 * 24)) + 5
+      try {
+        const [sellHistory, buyHistory] = await Promise.all([
+          fetchNetValueHistoryFast(record.sellCode, historyDays),
+          fetchNetValueHistoryFast(record.buyCode, historyDays)
+        ])
+
+        const sellRecord = sellHistory.find(h => h.date === record.date)
+        const buyRecord = buyHistory.find(h => h.date === record.date)
+
+        let newSellNav = record.sellNav
+        let newBuyNav = record.buyNav
+        let updated = false
+
+        if (needUpdateSell && sellRecord) {
+          newSellNav = sellRecord.netValue
+          updated = true
+        }
+        if (needUpdateBuy && buyRecord) {
+          newBuyNav = buyRecord.netValue
+          updated = true
+        }
+
+        if (updated) {
+          aiTrackingStore.confirmRecordNav(record.id, newSellNav, newBuyNav)
+        }
+      } catch (e) {
+        console.error(`Failed to fetch history for record ${record.id}:`, e)
+      }
     }
   }
 }
@@ -378,7 +437,10 @@ function getCalcProcessCombined(record: AITrackingRecord) {
   const sellChange = ((sellPrice - sellNav) / sellNav) * 100
   const buyChange = ((buyPrice - buyNav) / buyNav) * 100
   
-  return `卖出: ${sellPrice.toFixed(4)} - <span style="color:#1989fa">${sellNav.toFixed(4)}</span> = ${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}% 买入: ${buyPrice.toFixed(4)} - <span style="color:#1989fa">${buyNav.toFixed(4)}</span> = ${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
+  const sellNavTag = record.sellNavEstimated ? ' <span style="color:#ff976a">(估值)</span>' : ''
+  const buyNavTag = record.buyNavEstimated ? ' <span style="color:#ff976a">(估值)</span>' : ''
+  
+  return `卖出: ${sellPrice.toFixed(4)} - <span style="color:#1989fa">${sellNav.toFixed(4)}</span>${sellNavTag} = ${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}% 买入: ${buyPrice.toFixed(4)} - <span style="color:#1989fa">${buyNav.toFixed(4)}</span>${buyNavTag} = ${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
 }
 
 function getStatusText(record: AITrackingRecord): string {

@@ -187,7 +187,7 @@ watch(() => intradayModal.value.data, (data) => {
 }, { deep: true })
 
 // 自动刷新开关状态
-const autoRefreshEnabled = ref(false)
+const autoRefreshEnabled = ref(true)
 // 自动刷新定时器
 let autoRefreshInterval: number | undefined
 // 交易状态更新定时器
@@ -354,6 +354,29 @@ const observeHoldings = computed(() => {
   return sortFunds(funds)
 })
 
+// [WHAT] 京东账户更新状态
+const jdUpdateStatus = computed(() => {
+  const allHoldings = holdingStore.holdings
+  if (allHoldings.length === 0) return null
+
+  const totalCount = allHoldings.length
+  const updatedCount = allHoldings.filter(fund => fund.isUpdated).length
+  const isInTrading = tradingSession.value === 'morning' || tradingSession.value === 'afternoon'
+
+  // 交易时间内：显示未更新
+  if (isInTrading) {
+    return { text: '未更新', class: 'not-updated' }
+  }
+  // 非交易时间：根据更新状态判断
+  if (updatedCount === 0) {
+    return { text: '未更新', class: 'not-updated' }
+  }
+  if (updatedCount < totalCount) {
+    return { text: `更新中${updatedCount}/${totalCount}`, class: 'updating' }
+  }
+  return { text: '已更新', class: 'updated' }
+})
+
 // [WHAT] 排序持仓基金（兼容旧代码）
 const sortedHoldings = computed(() => {
   return [...normalHoldings.value, ...observeHoldings.value]
@@ -412,6 +435,10 @@ onMounted(async () => {
   updateTradingSession()
   // 每秒更新交易状态，确保秒钟显示准确
   tradingSessionInterval = window.setInterval(updateTradingSession, 1000)
+  // 如果自动刷新默认开启，则启动定时器
+  if (autoRefreshEnabled.value) {
+    autoRefreshInterval = window.setInterval(refreshData, 60000)
+  }
 })
 
 onUnmounted(() => {
@@ -680,6 +707,9 @@ function goToDetail(code: string) {
               >
                 <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
               </van-button>
+              <span v-if="jdUpdateStatus" class="jd-update-status" :class="jdUpdateStatus.class">
+                {{ jdUpdateStatus.text }}
+              </span>
             </div>
           </div>
           <div class="holding-stats">
@@ -765,6 +795,9 @@ function goToDetail(code: string) {
             >
               <img src="@/assets/JD.jpg" class="source-icon" alt="京东" />
             </van-button>
+            <span v-if="jdUpdateStatus" class="jd-update-status" :class="jdUpdateStatus.class">
+              {{ jdUpdateStatus.text }}
+            </span>
           </div>
         </div>
         <div class="index-grid">
@@ -773,6 +806,7 @@ function goToDetail(code: string) {
             :key="fund.code"
             :fund="fund"
             :ui-mode="uiMode"
+            :trading-session="tradingSession"
             @click="router.push(`/detail/${fund.code}`)"
             @open-top-holdings="openTopHoldings(fund, $event)"
             @open-intraday-modal="openIntradayModal(fund, $event)"
@@ -794,6 +828,7 @@ function goToDetail(code: string) {
             :key="fund.code"
             :fund="fund"
             :ui-mode="uiMode"
+            :trading-session="tradingSession"
             @click="router.push(`/detail/${fund.code}`)"
             @open-top-holdings="openTopHoldings(fund, $event)"
             @open-intraday-modal="openIntradayModal(fund, $event)"
@@ -1431,6 +1466,28 @@ function goToDetail(code: string) {
   box-shadow: 0 0 0 2px #0ea5e9;
 }
 
+.jd-update-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.jd-update-status.updated {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.jd-update-status.updating {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.jd-update-status.not-updated {
+  color: var(--text-secondary);
+  background: rgba(158, 158, 158, 0.1);
+}
+
 .all-button,
 .qdii-button {
   padding: 0 8px;
@@ -1548,6 +1605,12 @@ function goToDetail(code: string) {
   /* 移动端：隐藏网页端按钮 */
   .title-left .web-only {
     display: none;
+  }
+
+  .jd-update-status {
+    margin-left: 4px;
+    font-size: 11px;
+    padding: 2px 6px;
   }
   
   /* 移动端：显示第二行按钮 */

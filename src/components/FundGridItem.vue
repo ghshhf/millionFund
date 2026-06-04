@@ -4,6 +4,7 @@ import eyeIcon from '@/assets/eye.png'
 defineProps<{
   fund: any
   uiMode: 'simple' | 'full'
+  tradingSession?: string
 }>()
 
 const emit = defineEmits<{
@@ -11,6 +12,19 @@ const emit = defineEmits<{
   openTopHoldings: [event: Event]
   openIntradayModal: [event: Event]
 }>()
+
+// 获取基金名称颜色类
+function getFundNameClass(fund: any, tradingSession?: string) {
+  const isInTrading = tradingSession === 'morning' || tradingSession === 'afternoon'
+  
+  if (isInTrading) {
+    return 'fund-name-pending'  // 交易时间内显示灰色
+  }
+  if (!fund.isUpdated) {
+    return 'fund-name-not-updated'  // 未更新显示绿色
+  }
+  return 'fund-name-updated'  // 已更新显示黄色
+}
 </script>
 
 <template>
@@ -30,7 +44,7 @@ const emit = defineEmits<{
         <div class="fund-name-middle">
           <span v-if="fund.isQDII" class="qdii-tag">QD</span>
         </div>
-        <div class="fund-name-right">{{ fund.name }}</div>
+        <div class="fund-name-right" :class="getFundNameClass(fund, tradingSession)">{{ fund.name }}</div>
       </div>
     </div>
     <div class="index-content web-only">
@@ -90,7 +104,7 @@ const emit = defineEmits<{
           <div class="fund-name-middle">
             <span v-if="fund.isQDII" class="qdii-tag">QD</span>
           </div>
-          <div class="fund-name-right">{{ fund.name }}</div>
+          <div class="fund-name-right" :class="getFundNameClass(fund, tradingSession)">{{ fund.name }}</div>
         </div>
       </div>
       <div class="mobile-item-row mobile-item-row-2">
@@ -226,6 +240,19 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   height: 100%;
+}
+
+/* 基金名称更新状态颜色 */
+.fund-name-pending {
+  color: var(--text-secondary) !important;
+}
+
+.fund-name-not-updated {
+  color: #4caf50 !important;
+}
+
+.fund-name-updated {
+  color: #ff9800 !important;
 }
 
 .source-icon-small {

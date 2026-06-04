@@ -6,9 +6,11 @@ export interface AITrackingRecord {
   sellCode: string
   sellName: string
   sellNav: number
+  sellNavEstimated?: boolean
   buyCode: string
   buyName: string
   buyNav: number
+  buyNavEstimated?: boolean
   date: string
   createdAt: string
 }
@@ -42,6 +44,17 @@ export const useAITrackingStore = defineStore('aiTracking', () => {
     if (record) {
       record.sellNav = sellNav
       record.buyNav = buyNav
+      saveToLocalStorage()
+    }
+  }
+
+  function confirmRecordNav(id: string, sellNav: number, buyNav: number) {
+    const record = records.value.find(r => r.id === id)
+    if (record) {
+      record.sellNav = sellNav
+      record.buyNav = buyNav
+      record.sellNavEstimated = false
+      record.buyNavEstimated = false
       saveToLocalStorage()
     }
   }
@@ -80,6 +93,7 @@ export const useAITrackingStore = defineStore('aiTracking', () => {
     addRecord,
     removeRecord,
     updateRecordNav,
+    confirmRecordNav,
     importRecords,
     clearAll,
     loadFromLocalStorage
