@@ -672,11 +672,11 @@ onUnmounted(() => {
 }
 
 .simple-status.success {
-  color: #07c160;
+  color: #ee0a24;
 }
 
-.simple-status.failed {
-  color: #ee0a24;
+.simple-status.fail {
+  color: #07c160;
 }
 
 .simple-status.pending {
