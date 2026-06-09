@@ -1323,7 +1323,7 @@ function goToDetail(code: string) {
   color: var(--color-primary);
 }
 
-/* 公告栏 */
+/* 公告栏 */       
 .notice-bar {
   display: flex;
   align-items: center;

@@ -43,12 +43,12 @@
             <div class="simple-funds">
               <div class="simple-fund-item">
                 <span class="simple-label sell">卖</span>
-                <span class="simple-fund-name">{{ record.sellName || record.sellCode }}</span>
+                <span class="simple-fund-name" :class="getStatusClass(record)">{{ record.sellName || record.sellCode }}</span>
                 <span class="simple-change" :class="getChangeClass(record, 'sell')">{{ getChangeText(record, 'sell') }}</span>
               </div>
               <div class="simple-fund-item">
                 <span class="simple-label buy">买</span>
-                <span class="simple-fund-name">{{ record.buyName || record.buyCode }}</span>
+                <span class="simple-fund-name" :class="getStatusClass(record)">{{ record.buyName || record.buyCode }}</span>
                 <span class="simple-change" :class="getChangeClass(record, 'buy')">{{ getChangeText(record, 'buy') }}</span>
               </div>
             </div>
@@ -727,6 +727,14 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
+}
+
+.simple-fund-name.success {
+  color: #ee0a24;
+}
+
+.simple-fund-name.fail {
+  color: #07c160;
 }
 
 .simple-change {
