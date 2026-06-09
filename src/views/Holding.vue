@@ -15,6 +15,8 @@ import { saveHoldings, saveSourceFilter, getSourceFilter } from '@/utils/storage
 import { isWeb, isMobile } from '@/utils/platform'
 import type { FundInfo, HoldingRecord } from '@/types/fund'
 import ScreenshotImport from '@/components/ScreenshotImport.vue'
+import riseW from '@/assets/riseW.jpg'
+import downW from '@/assets/downW.jpg'
 
 const router = useRouter()
 const holdingStore = useHoldingStore()
@@ -710,41 +712,32 @@ async function refreshHoldings() {
       <div class="nav-title">我的持仓</div>
       <div class="nav-actions">
         <!-- 网页端按钮 -->
-        <van-icon name="replay" size="20" @click="refreshHoldings" class="web-only" />
-        <!-- <van-icon name="photo-o" size="20" @click="showImportDialog = true" class="web-only" /> -->
-        <van-button size="small" @click="openBatchDialog" class="web-only">批量</van-button>
+        <div class="web-actions web-only">
+          <van-icon name="replay" size="20" @click="refreshHoldings" class="refresh-icon" />
+          <van-button size="small" @click="openBatchDialog" class="nav-btn">批量</van-button>
+          <van-button size="small" @click="backupHoldings" class="nav-btn">备份</van-button>
+          <van-button size="small" @click="restoreHoldings" class="nav-btn">恢复</van-button>
+        </div>
         
         <!-- 移动端按钮 -->
-        <van-button 
-          size="small" 
-          @click="handleSort('none')"
-          :type="sortDirection === 'none' ? 'primary' : 'default'"
-          class="mobile-only"
-        >
-          默认
-        </van-button>
-        <van-button 
-          size="small" 
-          @click="handleSort('up')"
-          :type="sortDirection === 'up' ? 'primary' : 'default'"
-          class="mobile-only"
-        >
-          升序
-        </van-button>
-        <van-button 
-          size="small" 
-          @click="handleSort('down')"
-          :type="sortDirection === 'down' ? 'primary' : 'default'"
-          class="mobile-only"
-        >
-          降序
-        </van-button>
-        <van-button size="small" @click="openBatchDialog" class="mobile-only">批量</van-button>
-        <van-button size="small" @click="restoreHoldings" class="mobile-only">恢复</van-button>
-        
-        <!-- 网页端按钮 -->
-        <van-button size="small" @click="backupHoldings" class="web-only">备份</van-button>
-        <van-button size="small" @click="restoreHoldings" class="web-only">恢复</van-button>
+        <div class="mobile-actions mobile-only">
+          <img 
+            :src="riseW" 
+            class="sort-mobile-icon"
+            :class="{ active: sortDirection === 'up' }"
+            @click="handleSort('up')"
+            alt="升序" 
+          />
+          <img 
+            :src="downW" 
+            class="sort-mobile-icon"
+            :class="{ active: sortDirection === 'down' }"
+            @click="handleSort('down')"
+            alt="降序" 
+          />
+          <van-button size="small" @click="openBatchDialog">批量</van-button>
+          <van-button size="small" @click="restoreHoldings">恢复</van-button>
+        </div>
       </div>
     </div>
 
@@ -789,22 +782,20 @@ async function refreshHoldings() {
             >
               默认
             </van-button>
-            <van-button 
-              size="small" 
-              icon="arrow-up" 
+            <img 
+              :src="riseW" 
+              class="sort-web-icon"
+              :class="{ active: sortDirection === 'up' }"
               @click="handleSort('up')"
-              :type="sortDirection === 'up' ? 'primary' : 'default'"
-            >
-              升序
-            </van-button>
-            <van-button 
-              size="small" 
-              icon="arrow-down" 
+              alt="升序" 
+            />
+            <img 
+              :src="downW" 
+              class="sort-web-icon"
+              :class="{ active: sortDirection === 'down' }"
               @click="handleSort('down')"
-              :type="sortDirection === 'down' ? 'primary' : 'default'"
-            >
-              降序
-            </van-button>
+              alt="降序" 
+            />
             <van-button 
               size="small" 
               class="source-button"
@@ -1226,10 +1217,10 @@ async function refreshHoldings() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px;
+  padding: 12px 16px;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
-  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
 }
 
 .nav-title {
@@ -1238,11 +1229,52 @@ async function refreshHoldings() {
   color: var(--text-primary);
 }
 
-/* 导航栏右侧按钮 */
+/* 导航栏右侧按钮容器 */
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+}
+
+/* 网页端按钮容器 */
+.web-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refresh-icon {
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s ease;
+}
+
+.refresh-icon:hover {
+  color: var(--text-primary);
+}
+
+.nav-btn {
+  font-size: 13px !important;
+  padding: 6px 12px !important;
+  min-width: auto !important;
+  width: auto !important;
+  flex: none !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  justify-content: center !important;
+}
+
+.nav-btn .van-button__content {
+  padding: 0 !important;
+  min-width: auto !important;
+  width: auto !important;
+  white-space: nowrap !important;
+}
+
+/* 移动端按钮容器 */
+.mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* 移动端：导航栏两行布局 */
@@ -1250,9 +1282,9 @@ async function refreshHoldings() {
   .custom-nav-bar {
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    gap: 10px;
+    padding: 10px 16px;
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
   }
   
   .nav-title {
@@ -1262,10 +1294,13 @@ async function refreshHoldings() {
   
   .nav-actions {
     width: 100%;
-    flex-direction: row;
-    gap: 8px;
     justify-content: space-between;
-    align-items: center;
+  }
+  
+  .mobile-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
   }
   
   /* 移动端：隐藏网页端按钮 */
@@ -1276,17 +1311,39 @@ async function refreshHoldings() {
   /* 移动端：显示移动端按钮 */
   .mobile-only {
     display: flex;
+    align-items: center;
+    gap: 8px;
   }
   
-  .nav-actions .van-icon {
+  .mobile-actions .van-icon {
     font-size: 18px;
   }
   
-  .nav-actions .van-button {
+  .mobile-actions .van-button {
     font-size: 12px;
     padding: 6px 12px;
-    flex: 1;
-    min-width: 0;
+    flex: none;
+    min-width: auto;
+    width: auto;
+    white-space: nowrap;
+  }
+  
+  .sort-mobile-icon {
+    width: 28px !important;
+    height: 28px !important;
+    max-width: 28px !important;
+    max-height: 28px !important;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  
+  .sort-mobile-icon.active {
+    opacity: 1;
+    background: rgba(59, 130, 246, 0.1);
   }
 }
 
@@ -1334,6 +1391,28 @@ async function refreshHoldings() {
   .source-icon {
     width: 16px;
     height: 16px;
+  }
+  
+  .sort-web-icon {
+    width: 36px !important;
+    height: 36px !important;
+    max-width: 36px !important;
+    max-height: 36px !important;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  
+  .sort-web-icon:hover {
+    opacity: 0.8;
+  }
+  
+  .sort-web-icon.active {
+    opacity: 1;
+    background: rgba(59, 130, 246, 0.1);
   }
 }
 
