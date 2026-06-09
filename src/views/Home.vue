@@ -606,24 +606,50 @@ function goToDetail(code: string) {
     <!-- 顶部搜索栏 -->
     <div class="top-header">
       <div class="header-left">
-        <span class="app-title">AI 百万实盘</span>
-        <div class="reference-ma-badge header-ma-badge">
-          <span class="reference-ma-label">参考均线</span>
-          <span class="reference-ma-value" :class="hs300ChangePercent >= 0 ? 'up' : 'down'">
-            {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
-          </span>
+        <span class="app-title web-only">AI 百万实盘</span>
+        <span class="app-title mobile-only">AI实盘</span>
+        <!-- 网页端：参考均线和指数横向显示 -->
+        <div class="web-only">
+          <div class="reference-ma-badge header-ma-badge">
+            <span class="reference-ma-label">参考均线</span>
+            <span class="reference-ma-value" :class="hs300ChangePercent >= 0 ? 'up' : 'down'">
+              {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
+            </span>
+          </div>
+          <div class="top-indices-bar" v-if="topIndices.length > 0">
+            <div 
+              v-for="index in topIndices" 
+              :key="index.code"
+              class="top-index-item"
+              :class="[index.changePercent >= 0 ? 'up' : 'down']"
+              @click="router.push('/market')"
+            >
+              <span class="top-index-name">{{ index.name }}</span>
+              <span class="top-index-change">
+                {{ index.changePercent >= 0 ? '+' : '' }}{{ index.changePercent.toFixed(2) }}%
+              </span>
+            </div>
+          </div>
         </div>
-        <!-- 网页端：顶部指数横向显示 -->
-        <div class="top-indices-bar web-only" v-if="topIndices.length > 0">
+        <!-- 移动端：参考均线和指数横向排列，每个都是上下布局 -->
+        <div class="mobile-indices-container mobile-only">
+          <!-- 参考均线 - 保持蓝色，不受涨跌影响 -->
+          <div class="mobile-ma-item">
+            <span class="mobile-ma-name">参考均线</span>
+            <span class="mobile-ma-value">
+              {{ hs300ChangePercent >= 0 ? '+' : '' }}{{ hs300ChangePercent.toFixed(2) }}%
+            </span>
+          </div>
+          <!-- 指数 - 根据涨跌变化配色 -->
           <div 
             v-for="index in topIndices" 
             :key="index.code"
-            class="top-index-item"
+            class="mobile-index-item"
             :class="[index.changePercent >= 0 ? 'up' : 'down']"
             @click="router.push('/market')"
           >
-            <span class="top-index-name">{{ index.name }}</span>
-            <span class="top-index-change">
+            <span class="mobile-index-name">{{ index.name }}</span>
+            <span class="mobile-index-change">
               {{ index.changePercent >= 0 ? '+' : '' }}{{ index.changePercent.toFixed(2) }}%
             </span>
           </div>
@@ -639,11 +665,8 @@ function goToDetail(code: string) {
           <van-icon name="replay" size="22" @click="refreshData" />
           <van-icon name="setting-o" size="22" @click="router.push('/alerts')" />
         </div>
-        <!-- 移动端：只显示自动刷新和刷新按钮 -->
+        <!-- 移动端：只显示自动刷新开关和刷新按钮 -->
         <div class="mobile-only">
-          <div class="auto-refresh-label">
-            <span>{{ autoRefreshEnabled ? '自动刷新开' : '自动刷新关' }}</span>
-          </div>
           <van-switch v-model="autoRefreshEnabled" size="20" />
           <van-icon name="replay" size="22" @click="refreshData" />
         </div>
@@ -1026,12 +1049,12 @@ function goToDetail(code: string) {
         />
       </template>
 
-      <!-- 空状态 - 移动端显示添加按钮，网页端完全隐藏 -->
+      <!-- 空状态 - 移动端和网页端都隐藏 -->
       <van-empty
         v-if="fundStore.watchlist.length === 0"
         image="search"
         description="暂无自选基金"
-        class="mobile-only"
+        class="hidden"
       >
         <van-button round type="primary" @click="goToSearch">
           添加基金
@@ -1168,6 +1191,10 @@ function goToDetail(code: string) {
 </template>
 
 <style scoped>
+.hidden {
+  display: none !important;
+}
+
 .home-page {
   /* [WHY] 使用 100% 高度适配 flex 布局 */
   height: 100%;
@@ -2911,6 +2938,102 @@ function goToDetail(code: string) {
   
   .auto-refresh-label {
     font-size: 11px;
+  }
+  
+  /* 移动端：指数显示容器 - 横向排列 */
+  .mobile-indices-container {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    margin-left: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  
+  /* 移动端：参考均线项 - 保持蓝色 */
+  .mobile-ma-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 6px;
+    min-width: 56px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .mobile-ma-item:hover {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+  
+  .mobile-ma-name {
+    font-size: 10px;
+    color: #60a5fa;
+    white-space: nowrap;
+  }
+  
+  .mobile-ma-value {
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 2px;
+    color: #60a5fa;
+    font-family: var(--font-number);
+  }
+  
+  /* 移动端：单个指数项 - 根据涨跌变化配色 */
+  .mobile-index-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    min-width: 56px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .mobile-index-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  
+  /* 上涨样式 */
+  .mobile-index-item.up {
+    border-color: rgba(255, 107, 107, 0.3);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 107, 107, 0.08) 100%);
+  }
+  
+  /* 下跌样式 */
+  .mobile-index-item.down {
+    border-color: rgba(81, 207, 102, 0.3);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(81, 207, 102, 0.08) 100%);
+  }
+  
+  /* 移动端：指数名称 */
+  .mobile-index-name {
+    font-size: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  
+  /* 移动端：指数涨跌幅 */
+  .mobile-index-change {
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 2px;
+    font-family: var(--font-number);
+  }
+  
+  .mobile-index-item.up .mobile-index-change {
+    color: var(--color-up);
+  }
+  
+  .mobile-index-item.down .mobile-index-change {
+    color: var(--color-down);
   }
 }
 
