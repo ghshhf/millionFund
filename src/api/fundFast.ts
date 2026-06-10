@@ -219,9 +219,9 @@ export async function fetchFundEstimatesBatch(codes: string[]): Promise<Map<stri
  * 获取历史净值（带缓存，使用pingzhongdata接口）
  * [WHY] 使用JSONP方式避免CORS问题
  */
-export async function fetchNetValueHistoryFast(code: string, days = 30): Promise<NetValueRecord[]> {
+export async function fetchNetValueHistoryFast(code: string, days = 30): Promise<{ records: NetValueRecord[], fundName: string }> {
   const cacheKey = `netvalue_${code}_${days}`
-  const cached = cache.get<NetValueRecord[]>(cacheKey)
+  const cached = cache.get<{ records: NetValueRecord[], fundName: string }>(cacheKey)
   if (cached) return cached
 
   return new Promise((resolve) => {
@@ -231,22 +231,23 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
     const scriptId = `netvalue_${code}_${Date.now()}`
     const timeout = setTimeout(() => {
       cleanup()
-      resolve([])
+      resolve({ records: [], fundName: '' })
     }, 15000)
 
     const script = document.createElement('script')
     script.id = scriptId
-    // [WHY] pingzhongdata.js 包含 Data_netWorthTrend 变量
+    // [WHY] pingzhongdata.js 包含 Data_netWorthTrend 变量和 fS_name 变量
     script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
 
     script.onload = () => {
       cleanup()
       try {
-        // [WHAT] pingzhongdata 设置全局变量 Data_netWorthTrend
+        // [WHAT] pingzhongdata 设置全局变量 Data_netWorthTrend 和 fS_name
         const trend = (window as any).Data_netWorthTrend || []
+        const fundName = (window as any).fS_name || ''
 
         if (trend.length === 0) {
-          resolve([])
+          resolve({ records: [], fundName })
           return
         }
 
@@ -267,17 +268,17 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
         // [WHY] 反转数组保持跟原API一致：最新的在前
         records.reverse()
 
-        cache.set(cacheKey, records, CACHE_TTL.NET_VALUE)
-        resolve(records)
+        cache.set(cacheKey, { records, fundName }, CACHE_TTL.NET_VALUE)
+        resolve({ records, fundName })
       } catch (err) {
         console.error('解析历史净值失败:', err)
-        resolve([])
+        resolve({ records: [], fundName: '' })
       }
     }
 
     script.onerror = () => {
       cleanup()
-      resolve([])
+      resolve({ records: [], fundName: '' })
     }
 
     function cleanup() {
@@ -766,9 +767,9 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
   // }
 
   // [WHAT] 获取估值数据和历史净值数据
-  const [estimateData, historyData] = await Promise.all([
+  const [estimateData, historyResult] = await Promise.all([
     fetchFundEstimateFast(code).catch(() => null),
-    fetchNetValueHistoryFast(code, 2).catch(() => [])  // 只获取最近 2 天的净值
+    fetchNetValueHistoryFast(code, 2).catch(() => ({ records: [], fundName: '' }))  // 只获取最近 2 天的净值
   ])
 
   // [DEBUG] 打印获取到的数据
@@ -776,7 +777,7 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
   //   code,
   //   isQDII,
   //   estimateData,
-  //   historyData
+  //   historyResult
   // })
 
   const now = new Date()
@@ -793,6 +794,7 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
   const inTradingTime = isWeekday && isTradingHours
 
   // [WHAT] 从历史净值中提取最新净值（第一个点是最新的）
+  const historyData = historyResult.records || []
   const latestNav = historyData.length > 0 ? historyData[0] : null
   const navData = latestNav ? {
     netValue: latestNav.netValue,
@@ -800,10 +802,10 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
     changeRate: latestNav.changeRate
   } : null
 
-  // [WHAT] 构建结果
+  // [WHAT] 构建结果，优先使用历史净值中的基金名称
   const result: FundAccurateData = {
     code,
-    name: estimateData?.name || '',
+    name: estimateData?.name || historyResult.fundName || '',
     nav: navData?.netValue || 0,
     navDate: navData?.date || '',
     navChange: navData?.changeRate || 0,
@@ -955,7 +957,8 @@ export async function fetchSimpleKLineData(code: string, days = 60): Promise<Sim
   const cached = cache.get<SimpleKLineData[]>(cacheKey)
   if (cached) return cached
 
-  const history = await fetchNetValueHistoryFast(code, days)
+  const historyResult = await fetchNetValueHistoryFast(code, days)
+  const history = historyResult.records || []
 
   // 转换为K线格式（按时间正序）
   const klineData = history
@@ -988,7 +991,8 @@ export async function calculatePeriodReturns(code: string): Promise<PeriodReturn
   if (cached) return cached
 
   // 获取足够长的历史数据
-  const history = await fetchNetValueHistoryFast(code, 400)
+  const historyResult = await fetchNetValueHistoryFast(code, 400)
+  const history = historyResult.records || []
   if (history.length < 2) return []
 
   const latest = history[0]!
