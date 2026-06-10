@@ -58,10 +58,10 @@
           </div>
           <!-- 移动端简版UI -->
           <div class="record-simple-mobile">
-            <span class="simple-sell-name">{{ record.sellName || record.sellCode }}</span>
+            <span class="simple-sell-name" :class="getStatusClass(record)">{{ record.sellName || record.sellCode }}</span>
             <span class="simple-change sell" :class="getChangeClass(record, 'sell')">{{ getChangeText(record, 'sell') }}</span>
             <span class="simple-arrow">→</span>
-            <span class="simple-buy-name">{{ record.buyName || record.buyCode }}</span>
+            <span class="simple-buy-name" :class="getStatusClass(record)">{{ record.buyName || record.buyCode }}</span>
             <span class="simple-change buy" :class="getChangeClass(record, 'buy')">{{ getChangeText(record, 'buy') }}</span>
           </div>
         </div>
@@ -260,8 +260,8 @@ async function confirmAddRecord() {
         fetchNetValueHistoryFast(newRecord.value.buyCode, historyDays)
       ])
 
-      const sellRecord = sellHistory.find(r => r.date === newRecord.value.date)
-      const buyRecord = buyHistory.find(r => r.date === newRecord.value.date)
+      const sellRecord = sellHistory.records?.find(r => r.date === newRecord.value.date)
+      const buyRecord = buyHistory.records?.find(r => r.date === newRecord.value.date)
 
       if (sellRecord && buyRecord) {
         sellName = sellName || newRecord.value.sellCode
@@ -421,8 +421,8 @@ async function fetchCurrentPrices() {
           fetchNetValueHistoryFast(record.buyCode, historyDays)
         ])
 
-        const sellRecord = sellHistory.find(h => h.date === record.date)
-        const buyRecord = buyHistory.find(h => h.date === record.date)
+        const sellRecord = sellHistory.records?.find(h => h.date === record.date)
+        const buyRecord = buyHistory.records?.find(h => h.date === record.date)
 
         let newSellNav = record.sellNav
         let newBuyNav = record.buyNav
@@ -794,6 +794,16 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-primary);
+  }
+  
+  .simple-sell-name.success,
+  .simple-buy-name.success {
+    color: #ee0a24;
+  }
+  
+  .simple-sell-name.fail,
+  .simple-buy-name.fail {
+    color: #07c160;
   }
 }
 

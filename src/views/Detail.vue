@@ -213,7 +213,8 @@ async function loadTrendPrediction() {
   
   isTrendLoading.value = true
   try {
-    const history = await fetchNetValueHistoryFast(fundCode.value, 90)
+    const historyResult = await fetchNetValueHistoryFast(fundCode.value, 90)
+    const history = historyResult.records || []
     if (history.length > 0) {
       const data = history.map(item => ({
         date: item.date,

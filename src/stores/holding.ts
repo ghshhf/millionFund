@@ -219,7 +219,8 @@ export const useHoldingStore = defineStore('holding', () => {
     // 计算趋势预测
     let trendPrediction: TrendPrediction | undefined
     try {
-      const historyData = await fetchNetValueHistoryFast(code, 60)
+      const historyResult = await fetchNetValueHistoryFast(code, 60)
+      const historyData = historyResult.records || []
       if (historyData && historyData.length >= 30) {
         const netValuePoints = historyData.map(item => ({
           date: item.date,
