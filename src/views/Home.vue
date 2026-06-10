@@ -1927,7 +1927,7 @@ function goToDetail(code: string) {
 }
 
 .index-item {
-  padding: 4px 4px;
+  padding: 1px 4px;
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
@@ -2074,8 +2074,8 @@ function goToDetail(code: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 18px;
   font-weight: 700;
   font-family: var(--font-number);
   padding: 6px 10px;

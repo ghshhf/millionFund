@@ -171,7 +171,7 @@ function getFundNameClass(fund: any, tradingSession?: string) {
 
 <style scoped>
 .index-item {
-  padding: 4px 4px;
+  padding: 0 2px;
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
@@ -325,11 +325,11 @@ function getFundNameClass(fund: any, tradingSession?: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 16px;
   font-weight: 700;
   font-family: var(--font-number);
-  padding: 6px 10px;
+  padding: 2px 4px;
   border-radius: 8px;
   width: 100%;
   text-align: center;
@@ -512,9 +512,9 @@ function getFundNameClass(fund: any, tradingSession?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 0 4px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -533,7 +533,7 @@ function getFundNameClass(fund: any, tradingSession?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 2px 4px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
