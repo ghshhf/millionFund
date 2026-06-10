@@ -1604,6 +1604,20 @@ async function refreshHoldings() {
     padding: 1px 4px;
     font-size: 9px;
   }
+  
+  /* 移动端：当日涨幅字体比累计涨幅大 */
+  .col-change {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  
+  .col-profit .profit-amount {
+    font-size: 13px;
+  }
+  
+  .col-profit .profit-rate {
+    font-size: 11px;
+  }
 }
 
 .header-left {
