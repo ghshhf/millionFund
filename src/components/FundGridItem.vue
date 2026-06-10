@@ -111,10 +111,14 @@ function getFundNameClass(fund: any, tradingSession?: string) {
         <div class="fund-code">{{ fund.code }}</div>
         <div class="fund-sectors">{{ fund.industrySectors || '未设置' }}</div>
       </div>
-      <div class="mobile-item-row mobile-item-row-3">
-        <div class="index-change">
-          <van-icon :name="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'arrow-up' : 'arrow-down'" size="14" />
-          <span>{{ fund.todayChange ? (parseFloat(fund.todayChange) >= 0 ? '+' : '') + fund.todayChange + '%' : '--' }}</span>
+      <div class="mobile-item-row mobile-item-row-3 mobile-item-row-3-4-container">
+        <!-- 左边：涨跌幅（无箭头，带背景色） -->
+        <div class="mobile-item-row-3-left" :class="fund.todayChange && parseFloat(fund.todayChange) >= 0 ? 'up' : fund.todayChange && parseFloat(fund.todayChange) < 0 ? 'down' : ''">
+          {{ fund.todayChange ? (parseFloat(fund.todayChange) >= 0 ? '+' : '') + fund.todayChange + '%' : '--' }}
+        </div>
+        <!-- 右边：添加后涨幅（无"累计"文字，正红色负蓝色） -->
+        <div class="mobile-item-row-3-right added-gain-section" v-if="fund.addedGain !== undefined" :class="fund.addedGain >= 0 ? 'up' : 'down'">
+          {{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%
         </div>
       </div>
       <div class="mobile-item-row mobile-item-row-4" v-if="uiMode === 'full' && fund.trendPrediction">
@@ -145,11 +149,6 @@ function getFundNameClass(fund: any, tradingSession?: string) {
           <van-icon name="chart-trending-o" size="12" />
           当日分时图
         </span>
-      </div>
-      <div class="added-gain-section mobile-only" v-if="fund.addedGain !== undefined">
-        <div class="added-gain-badge mobile-added-gain" :class="fund.addedGain >= 0 ? 'up' : 'down'">
-          <span>累计{{ fund.addedGain >= 0 ? '+' : '' }}{{ fund.addedGain.toFixed(2) }}%</span>
-        </div>
       </div>
     </div>
     <div class="index-holdings web-only" v-if="uiMode === 'full'" @click.stop="emit('openTopHoldings', $event)">
@@ -459,12 +458,23 @@ function getFundNameClass(fund: any, tradingSession?: string) {
 .mobile-item-row-1 .fund-name-right { font-size: 10px; line-height: 1.2; }
 
 .mobile-item-row-2 {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 3px;
-  min-height: 12px;
-  padding: 0px 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
 }
-.mobile-item-row-2 .fund-code { font-size: 9px; font-weight: 600; flex-shrink: 0; }
+.mobile-item-row-2 .fund-code { 
+  font-size: 9px; 
+  font-weight: 600; 
+  flex-shrink: 0; 
+  line-height: 1; 
+  margin-left: 4px; 
+  vertical-align: middle;
+  margin-bottom: 0;
+}
 .mobile-item-row-2 .fund-sectors {
   font-size: 8px;
   color: var(--text-secondary);
@@ -472,6 +482,9 @@ function getFundNameClass(fund: any, tradingSession?: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1;
+  vertical-align: middle;
+  margin-bottom: 0;
 }
 
 .mobile-item-row-3 { justify-content: center; min-height: 14px; padding: 0px 0; }
@@ -483,6 +496,55 @@ function getFundNameClass(fund: any, tradingSession?: string) {
   font-size: 11px;
   font-weight: 600;
   margin-right: 0;
+}
+
+/* 第三行：涨跌幅和添加后涨幅横向排列 */
+.mobile-item-row-3-4-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 28px;
+  padding: 0;
+}
+
+.mobile-item-row-3-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mobile-item-row-3-left.up {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff6b6b;
+}
+
+.mobile-item-row-3-left.down {
+  background: rgba(7, 193, 96, 0.12);
+  color: #07c160;
+}
+
+.mobile-item-row-3-right.added-gain-section {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mobile-item-row-3-right.added-gain-section.up {
+  color: var(--up-color);
+}
+
+.mobile-item-row-3-right.added-gain-section.down {
+  color: #1989fa;
 }
 
 .mobile-item-row-4 { justify-content: space-between; min-height: 12px; padding: 0px 4px; }
