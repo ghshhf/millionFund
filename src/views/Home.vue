@@ -1927,7 +1927,7 @@ function goToDetail(code: string) {
 }
 
 .index-item {
-  padding: 1px 4px;
+  padding: 4px 4px;
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
