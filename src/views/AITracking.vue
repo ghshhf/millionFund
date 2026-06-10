@@ -43,6 +43,9 @@
         @dragleave="handleDragLeave"
         @drop="handleDrop($event, index)"
         @dragend="handleDragEnd"
+        @touchstart="handleTouchStart($event, index)"
+        @touchmove="handleTouchMove($event)"
+        @touchend="handleTouchEnd"
       >
         <!-- 简版UI -->
         <div v-if="uiMode === 'simple'" class="record-simple">
@@ -220,6 +223,94 @@ const newRecord = ref<NewRecord>({
 // 拖拽排序相关状态
 const draggingIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
+
+// 移动端拖拽相关状态
+const touchDragging = ref(false)
+const touchStartY = ref(0)
+const touchCurrentY = ref(0)
+const touchDragElement = ref<HTMLElement | null>(null)
+
+// 移动端touch事件处理
+function handleTouchStart(event: TouchEvent, index: number) {
+  if (uiMode.value !== 'simple') return
+  
+  const touch = event.touches[0]
+  touchStartY.value = touch.clientY
+  touchCurrentY.value = touch.clientY
+  draggingIndex.value = index
+  touchDragging.value = true
+  
+  // 获取当前元素
+  const target = event.currentTarget as HTMLElement
+  touchDragElement.value = target
+  target.classList.add('dragging')
+  
+  showToast({ message: '开始拖拽，拖动到目标位置松开', duration: 1500 })
+}
+
+function handleTouchMove(event: TouchEvent) {
+  if (!touchDragging.value || uiMode.value !== 'simple') return
+  
+  event.preventDefault()
+  
+  const touch = event.touches[0]
+  touchCurrentY.value = touch.clientY
+  
+  // 计算移动距离，找到目标位置
+  const cards = document.querySelectorAll('.record-card')
+  let newOverIndex = null
+  
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i] as HTMLElement
+    const rect = card.getBoundingClientRect()
+    const centerY = rect.top + rect.height / 2
+    
+    if (Math.abs(touchCurrentY.value - centerY) < rect.height / 2) {
+      newOverIndex = i
+      break
+    }
+  }
+  
+  dragOverIndex.value = newOverIndex
+  
+  // 更新视觉反馈
+  cards.forEach((card, i) => {
+    const el = card as HTMLElement
+    if (i === dragOverIndex.value) {
+      el.classList.add('drag-over')
+    } else {
+      el.classList.remove('drag-over')
+    }
+  })
+}
+
+function handleTouchEnd(event: TouchEvent) {
+  if (!touchDragging.value || uiMode.value !== 'simple') return
+  
+  // 执行排序
+  if (draggingIndex.value !== null && dragOverIndex.value !== null && draggingIndex.value !== dragOverIndex.value) {
+    aiTrackingStore.reorderRecords(draggingIndex.value, dragOverIndex.value)
+    showToast({ message: '排序已更新', duration: 1000 })
+  }
+  
+  // 清理状态
+  touchDragging.value = false
+  touchStartY.value = 0
+  touchCurrentY.value = 0
+  
+  if (touchDragElement.value) {
+    touchDragElement.value.classList.remove('dragging')
+  }
+  
+  // 清理所有drag-over样式
+  document.querySelectorAll('.record-card').forEach(card => {
+    (card as HTMLElement).classList.remove('drag-over')
+  })
+  
+  draggingIndex.value = null
+  dragOverIndex.value = null
+  touchDragElement.value = null
+}
 
 function resetNewRecord() {
   newRecord.value = {
