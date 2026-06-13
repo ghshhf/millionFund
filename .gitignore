@@ -32,8 +32,6 @@ android/*.iml
 *.apk
 *.aab
 *.keystore
-!android/app/debug.keystore
-!android/app/fund-app.keystore
 
 # Capacitor
 capacitor.config.json
