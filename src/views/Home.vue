@@ -217,6 +217,12 @@ const tradingSession = ref<TradingSession>('closed')
 // [WHAT] 当前时间，用于实时更新时分秒
 const currentTime = ref(new Date())
 
+// [WHAT] 是否为周末
+const isWeekend = computed(() => {
+  const day = currentTime.value.getDay()
+  return day === 0 || day === 6
+})
+
 // [WHAT] 交易状态文本和样式
 const tradingStatus = computed(() => {
   const session = tradingSession.value
@@ -293,6 +299,12 @@ const combinedIndices = computed(() => {
   })
   
   return result
+})
+
+// [WHAT] 移动端专用指数列表 - 只显示6个主要指数，按指定顺序排列
+const mobileIndices = computed(() => {
+  const targetIndices = ['上证指数', '恒生指数', '日经225', '道琼斯', '标普500', '纳斯达克']
+  return targetIndices.map(name => combinedIndices.value.find(idx => idx.name === name)).filter(Boolean) as MarketIndexSimple[]
 })
 
 // [WHAT] 计算当日盈亏总和（只计算非观察账户）
@@ -704,11 +716,11 @@ function goToDetail(code: string) {
             <span class="live-dot" :class="tradingStatus.class"></span>
             <span>持仓趋势</span>
             <div class="mobile-profit-summary mobile-only">
-              <span :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
-                {{ totalTodayProfitPercent >= 0 ? '+' : '' }}{{ totalTodayProfitPercent.toFixed(2) }}%
+              <span :class="isWeekend ? 'closed' : (totalTodayProfitPercent >= 0 ? 'up' : 'down')">
+                {{ isWeekend ? '休市' : ((totalTodayProfitPercent >= 0 ? '+' : '') + totalTodayProfitPercent.toFixed(2) + '%') }}
               </span>
-              <span :class="totalTodayProfit >= 0 ? 'up' : 'down'">
-                盈亏{{ Math.round(totalTodayProfit) }}
+              <span :class="isWeekend ? 'closed' : (totalTodayProfit >= 0 ? 'up' : 'down')">
+                {{ isWeekend ? '' : '盈亏' + Math.round(totalTodayProfit) }}
               </span>
             </div>
             <!-- 网页端：按钮在第一行 -->
@@ -772,16 +784,16 @@ function goToDetail(code: string) {
           </div>
           <div class="holding-stats">
             <div class="profit-section">
-              <div class="profit-item" :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
+              <div class="profit-item" :class="isWeekend ? 'closed' : (totalTodayProfitPercent >= 0 ? 'up' : 'down')">
                 <span class="profit-label">利润率</span>
-                <span class="profit-percent" :class="totalTodayProfitPercent >= 0 ? 'up' : 'down'">
-                  {{ totalTodayProfitPercent >= 0 ? '+' : '' }}{{ totalTodayProfitPercent.toFixed(2) }}%
+                <span class="profit-percent" :class="isWeekend ? 'closed' : (totalTodayProfitPercent >= 0 ? 'up' : 'down')">
+                  {{ isWeekend ? '休市' : ((totalTodayProfitPercent >= 0 ? '+' : '') + totalTodayProfitPercent.toFixed(2) + '%') }}
                 </span>
               </div>
               <div class="profit-divider"></div>
-              <div class="profit-item" :class="totalTodayProfit >= 0 ? 'up' : 'down'">
+              <div class="profit-item" :class="isWeekend ? 'closed' : (totalTodayProfit >= 0 ? 'up' : 'down')">
                 <span class="profit-label">今日盈亏</span>
-                <span class="profit-value">{{ totalTodayProfit >= 0 ? '+' : '' }}{{ totalTodayProfit.toFixed(2) }}元</span>
+                <span class="profit-value">{{ isWeekend ? '休市' : ((totalTodayProfit >= 0 ? '+' : '') + totalTodayProfit.toFixed(2) + '元') }}</span>
               </div>
             </div>
             <div class="trading-status" :class="tradingStatus.class">
@@ -874,10 +886,10 @@ function goToDetail(code: string) {
             <span class="observe-divider-text">量化观察</span>
             <span 
               class="observe-profit-badge" 
-              :class="observeTodayProfitPercent >= 0 ? 'up' : 'down'"
+              :class="isWeekend ? 'closed' : (observeTodayProfitPercent >= 0 ? 'up' : 'down')"
               v-if="observeHoldings.length > 0"
             >
-              {{ observeTodayProfitPercent >= 0 ? '+' : '' }}{{ observeTodayProfitPercent.toFixed(2) }}%
+              {{ isWeekend ? '休市' : ((observeTodayProfitPercent >= 0 ? '+' : '') + observeTodayProfitPercent.toFixed(2) + '%') }}
             </span>
             <div class="observe-divider-line"></div>
           </div>
@@ -905,7 +917,8 @@ function goToDetail(code: string) {
             <span class="status-time">{{ tradingStatus.subText }}</span>
           </div>
         </div>
-        <div class="index-grid market-index-grid">
+        <!-- 网页端：显示所有指数 -->
+        <div class="index-grid market-index-grid web-only">
           <div 
             v-for="index in combinedIndices" 
             :key="index.code" 
@@ -913,8 +926,7 @@ function goToDetail(code: string) {
             :class="[index.changePercent >= 0 ? 'up' : 'down']"
             @click="router.push('/market')"
           >
-            <!-- 网页端布局 -->
-            <div class="market-index-content web-only">
+            <div class="market-index-content">
               <div class="market-index-left">
                 <div class="market-index-name">{{ index.name }}</div>
                 <div class="market-index-value">
@@ -928,10 +940,20 @@ function goToDetail(code: string) {
               </div>
               </div>
             </div>
-            <div class="market-index-bar web-only"></div>
-            
-            <!-- 移动端布局 -->
-            <div class="mobile-market-layout mobile-only">
+            <div class="market-index-bar"></div>
+          </div>
+        </div>
+        
+        <!-- 移动端：只显示6个主要指数 -->
+        <div class="index-grid market-index-grid mobile-only">
+          <div 
+            v-for="index in mobileIndices" 
+            :key="index.code" 
+            class="index-item market-index-item"
+            :class="[index.changePercent >= 0 ? 'up' : 'down']"
+            @click="router.push('/market')"
+          >
+            <div class="mobile-market-layout">
               <!-- 第一行：指数名称 -->
               <div class="mobile-market-row mobile-market-row-1">
                 <div class="market-index-name">{{ index.name }}</div>
@@ -1440,6 +1462,10 @@ function goToDetail(code: string) {
   color: var(--color-down);
 }
 
+.mobile-profit-summary .closed {
+  color: #999;
+}
+
 .update-status {
   font-size: 11px;
   padding: 2px 8px;
@@ -1887,6 +1913,11 @@ function goToDetail(code: string) {
 .profit-item.down .profit-value,
 .profit-item.down .profit-percent {
   color: var(--color-down);
+}
+
+.profit-item.closed .profit-value,
+.profit-item.closed .profit-percent {
+  color: #999;
 }
 
 .profit-label {
@@ -2463,7 +2494,7 @@ function goToDetail(code: string) {
 }
 
 /* 全球主要指数样式 */
-.market-index-grid {
+.index-grid.market-index-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
@@ -2695,7 +2726,7 @@ function goToDetail(code: string) {
   }
   
   /* 移动端：持仓趋势每行3个 */
-  .index-grid {
+  .index-grid:not(.market-index-grid) {
     grid-template-columns: repeat(3, 1fr);
     gap: 0px;
     margin-top: 10px;
@@ -2843,7 +2874,7 @@ function goToDetail(code: string) {
   }
   
   /* 移动端：全球主要指数布局 */
-  .market-index-grid {
+  .index-grid.market-index-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 0px;
   }
@@ -3057,6 +3088,11 @@ function goToDetail(code: string) {
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+  
+  /* 网页端：全球指数保持grid布局 */
+  .index-grid.market-index-grid.web-only {
+    display: grid;
   }
 }
 
@@ -3489,6 +3525,11 @@ function goToDetail(code: string) {
 .observe-profit-badge.down {
   background: rgba(34, 197, 94, 0.1);
   color: #22c55e;
+}
+
+.observe-profit-badge.closed {
+  background: rgba(153, 153, 153, 0.1);
+  color: #999;
 }
 
 @media (max-width: 767px) {
