@@ -15,7 +15,7 @@ const holdingsData = [
 // 读取基金列表
 let fundList = []
 try {
-    const fundListData = fs.readFileSync('./fund-list.json', 'utf-8')
+    const fundListData = fs.readFileSync('./public/fund-list.json', 'utf-8')
     fundList = JSON.parse(fundListData)
     console.log(`已加载 ${fundList.length} 只基金数据`)
 } catch (error) {
