@@ -4,7 +4,7 @@
 
 import { cache, CACHE_TTL } from './cache'
 import { persistCache } from './tiantianApi'
-import type { FundEstimate, NetValueRecord } from '@/types/fund'
+import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 
 // [WHAT] 清除指定基金的缓存数据
@@ -59,6 +59,74 @@ function withConcurrencyControl<T>(fn: () => Promise<T>): Promise<T> {
     } else {
       requestQueue.push(execute)
     }
+  })
+}
+
+// ========== 全局变量型脚本请求串行化队列 ==========
+// [WHY] pingzhongdata/*.js 这类脚本会在 window 上设置固定名字的全局变量
+//       （如 Data_netWorthTrend / Data_currentFundManager / apidata 等）
+//       当并发请求不同基金时，后加载的脚本会覆盖先加载的变量，导致读错数据
+// [HOW] 所有这类请求都通过这个队列串行化执行
+const globalVarScriptQueue: (() => void)[] = []
+let globalVarScriptActive = false
+
+function runNextGlobalVarScript() {
+  if (globalVarScriptActive) return
+  const runner = globalVarScriptQueue.shift()
+  if (!runner) return
+  globalVarScriptActive = true
+  runner()
+}
+
+export function queueGlobalVarScript<T>(
+  url: string,
+  extract: () => T | Promise<T>,
+  cleanupVars: string[],
+  emptyResult: T,
+  timeoutMs = 15000
+): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const runner = () => {
+      const scriptId = `gv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+      // 请求前清零旧数据，防止读到上一个脚本残留
+      cleanupVars.forEach((v) => {
+        ;(window as any)[v] = null
+      })
+
+      const script = document.createElement('script')
+      script.id = scriptId
+      script.src = url
+
+      const timeout = setTimeout(() => finish(emptyResult), timeoutMs)
+
+      async function finish(data: T) {
+        clearTimeout(timeout)
+        const s = document.getElementById(scriptId)
+        if (s) document.body.removeChild(s)
+        // 请求结束后清掉自己占的全局变量
+        cleanupVars.forEach((v) => {
+          try { delete (window as any)[v] } catch { /* */ }
+        })
+        resolve(data)
+        globalVarScriptActive = false
+        runNextGlobalVarScript()
+      }
+
+      script.onload = async () => {
+        try {
+          const result = await extract()
+          finish(result)
+        } catch {
+          finish(emptyResult)
+        }
+      }
+      script.onerror = () => finish(emptyResult)
+      document.body.appendChild(script)
+    }
+
+    globalVarScriptQueue.push(runner)
+    runNextGlobalVarScript()
   })
 }
 
@@ -208,6 +276,231 @@ export async function fetchFundEstimatesBatch(codes: string[]): Promise<Map<stri
   return results
 }
 
+// ========== 估值API别名（与原 fund.ts 兼容） ==========
+
+/** 与 fetchFundEstimateFast 功能一致，保持 API 兼容 */
+export function fetchFundEstimate(code: string): Promise<FundEstimate> {
+  return fetchFundEstimateFast(code)
+}
+
+// ========== 基金列表 & 搜索 ==========
+
+// 基金列表缓存
+let _fundListCache: FundInfo[] | null = null
+
+/** 加载全量基金列表（本地 JSON），失败时回退到远程 */
+export async function fetchFundList(): Promise<FundInfo[]> {
+  if (_fundListCache) return _fundListCache
+
+  const paths = ['./fund-list.json', '/fund-list.json', 'fund-list.json']
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(path)
+      if (!response.ok) continue
+      const data = await response.json()
+      if (Array.isArray(data) && data.length > 0) {
+        _fundListCache = data as FundInfo[]
+        return _fundListCache
+      }
+    } catch {
+      /* 此路径失败，尝试下一个 */
+    }
+  }
+
+  // 回退到远程 JSONP 接口
+  return new Promise((resolve, reject) => {
+    const cbId = `fundlist_${Date.now()}`
+    const timeout = setTimeout(() => {
+      cleanup()
+      reject(new Error('获取基金列表超时'))
+    }, 30000)
+
+    ; (globalThis as any).r = null
+
+    function cleanup() {
+      clearTimeout(timeout)
+      const s = document.getElementById(cbId)
+      if (s) document.body.removeChild(s)
+    }
+
+    const script = document.createElement('script')
+    script.id = cbId
+    script.src = `https://fund.eastmoney.com/js/fundcode_search.js?rt=${Date.now()}`
+    script.onload = () => {
+      cleanup()
+      const raw = (globalThis as any).r
+      if (!Array.isArray(raw)) {
+        reject(new Error('基金列表数据格式错误'))
+        return
+      }
+      _fundListCache = raw.map((item: string[]) => ({
+        code: item[0] || '',
+        pinyin: item[1] || '',
+        name: item[2] || '',
+        type: item[3] || ''
+      }))
+      resolve(_fundListCache!)
+    }
+    script.onerror = () => {
+      cleanup()
+      reject(new Error('获取基金列表失败'))
+    }
+    document.body.appendChild(script)
+  })
+}
+
+/** 搜索基金（本地过滤 + 板块关键词映射） */
+export async function searchFund(keyword: string, limit = 50): Promise<FundInfo[]> {
+  const list = await fetchFundList()
+  if (!keyword.trim()) return []
+  const kw = keyword.toLowerCase().trim()
+
+  const sectorKeywords: Record<string, string[]> = {
+    // === 科技板块 ===
+    '半导体': ['半导体', '芯片', '集成电路', '科技', '电子', 'IC', '晶圆'],
+    '软件开发': ['软件', '计算机', '信息技术', '科技', '云计算', '数字'],
+    '计算机': ['计算机', '软件', '信息', '科技', '数据', '互联网'],
+    '人工智能': ['人工智能', 'AI', '智能', '机器人', '科技', '算力'],
+    '云计算': ['云计算', '云', '数据中心', '大数据', '科技'],
+    '大数据': ['大数据', '数据', '云', '信息', '科技'],
+    '物联网': ['物联网', 'IOT', '智能', '信息', '科技'],
+    '网络安全': ['网络安全', '安全', '信息安全', '科技'],
+    '通信设备': ['通信', '5G', '设备', '网络', '互联网', '信息', '电信', '光纤', '光缆', '基站', '卫星', '移动', '联通', '电信运营'],
+    '消费电子': ['消费电子', '电子', '智能', '手机', '科技'],
+    '电子元件': ['电子', '元件', '元器件', '科技', '半导体'],
+
+    // === 消费板块 ===
+    '白酒': ['白酒', '酒', '消费', '食品饮料', '茅台'],
+    '食品饮料': ['食品', '饮料', '消费', '酒', '乳业', '调味品'],
+    '家用电器': ['家电', '电器', '消费', '家居', '智能家居'],
+    '纺织服装': ['纺织', '服装', '消费', '服饰', '鞋'],
+    '商业零售': ['零售', '商业', '消费', '百货', '超市', '电商'],
+    '电商': ['电商', '电子商务', '互联网', '消费', '零售'],
+    '旅游酒店': ['旅游', '酒店', '餐饮', '消费', '休闲', '服务', '景区', '度假', '民宿', '航空', '出行', '文旅', '免税'],
+    '餐饮': ['餐饮', '食品', '消费', '酒店'],
+    '教育': ['教育', '培训', '学校', '消费'],
+    '美容护理': ['美容', '护理', '化妆品', '消费', '医美'],
+
+    // === 金融板块 ===
+    '银行': ['银行', '金融', '理财'],
+    '证券': ['证券', '券商', '金融', '投资'],
+    '保险': ['保险', '金融', '寿险'],
+    '多元金融': ['金融', '信托', '租赁', '投资'],
+
+    // === 医药健康板块 ===
+    '医药生物': ['医药', '生物', '医疗', '健康', '制药', '创新药'],
+    '中药': ['中药', '医药', '中医', '健康'],
+    '医疗器械': ['医疗器械', '器械', '医疗', '医药', '健康'],
+    '医疗服务': ['医疗', '医院', '健康', '医药', '服务'],
+    '创新药': ['创新药', '医药', '生物', '制药'],
+
+    // === 新能源板块 ===
+    '新能源': ['新能源', '光伏', '锂电', '风电', '储能', '电池', '太阳能', '清洁能源'],
+    '光伏': ['光伏', '太阳能', '新能源', '组件'],
+    '锂电池': ['锂电', '电池', '新能源', '储能', '动力电池'],
+    '风电': ['风电', '风能', '新能源', '风机'],
+    '储能': ['储能', '电池', '新能源', '能源'],
+    '氢能源': ['氢能', '燃料电池', '新能源', '氢'],
+
+    // === 制造业板块 ===
+    '汽车': ['汽车', '新能源车', '智能汽车', '车', '整车', '零部件'],
+    '新能源汽车': ['新能源车', '电动车', '汽车', '智能汽车'],
+    '机械设备': ['机械', '设备', '制造', '工程机械', '自动化'],
+    '电气设备': ['电气', '设备', '电力', '输配电'],
+    '工程机械': ['工程机械', '机械', '挖掘机', '起重机'],
+    '军工': ['军工', '国防', '航空', '航天', '军民融合', '船舶'],
+    '航空航天': ['航空', '航天', '飞机', '军工', '卫星'],
+    '船舶': ['船舶', '航运', '造船', '军工', '海洋'],
+
+    // === 周期板块 ===
+    '钢铁': ['钢铁', '钢', '金属', '有色'],
+    '有色金属': ['有色', '金属', '铜', '铝', '锂', '稀土', '黄金'],
+    '煤炭': ['煤炭', '能源', '煤', '焦炭'],
+    '石油石化': ['石油', '石化', '化工', '油气', '能源'],
+    '化工': ['化工', '化学', '材料', '石化'],
+    '电子化学品': ['电子', '化学', '化工', '材料', '新材料', '特种', '精细化工', '半导体材料', '光刻胶', '电解液', '正极', '负极'],
+    '基础化学': ['化学', '化工', '基础化工'],
+
+    // === 基建地产板块 ===
+    '房地产': ['房地产', '地产', '房产', '建筑', '基建', '物业'],
+    '建筑': ['建筑', '基建', '工程', '建材', '房地产'],
+    '建材': ['建材', '水泥', '玻璃', '建筑', '装修'],
+    '装修装饰': ['装修', '装饰', '建材', '家居', '家装', '家电', '地产', '建筑', '房地产', '基建'],
+    '基建': ['基建', '基础设施', '建筑', '工程', '铁路', '公路'],
+
+    // === 交通运输板块 ===
+    '港口航运': ['港口', '航运', '船舶', '物流', '海运'],
+    '航空机场': ['航空', '机场', '飞机', '民航'],
+    '铁路公路': ['铁路', '公路', '高铁', '交通'],
+    '物流': ['物流', '快递', '仓储', '供应链', '运输'],
+
+    // === 公用事业板块 ===
+    '电力': ['电力', '电网', '发电', '能源', '公用事业'],
+    '水务': ['水务', '水利', '供水', '环保', '公用事业'],
+    '燃气': ['燃气', '天然气', '能源', '公用事业'],
+    '环保': ['环保', '环境', '污染治理', '绿色', '碳中和'],
+
+    // === 传媒娱乐板块 ===
+    '传媒': ['传媒', '媒体', '广告', '影视', '文化'],
+    '游戏': ['游戏', '网游', '手游', '娱乐', '互联网'],
+    '影视': ['影视', '电影', '电视', '娱乐', '传媒'],
+    '广告': ['广告', '营销', '传媒', '互联网'],
+
+    // === 农业板块 ===
+    '农牧饲渔': ['农业', '养殖', '畜牧', '渔业', '饲料', '农产品', '种植', '粮食', '猪', '鸡', '生猪', '肉鸡', '水产', '牧业', '兽药', '动保', '种子', '化肥', '农药'],
+    '种植业': ['种植', '农业', '粮食', '农产品', '种子'],
+    '养殖业': ['养殖', '畜牧', '猪', '鸡', '农业'],
+
+    // === 其他板块 ===
+    '造纸印刷': ['造纸', '印刷', '纸业', '包装', '纸', '林业', '木材', '森林', '浆纸', '纸板', '出版'],
+    '纺织': ['纺织', '服装', '棉', '丝绸'],
+    '贵金属': ['贵金属', '黄金', '白银', '金', '银'],
+    '稀土': ['稀土', '稀有金属', '有色']
+  }
+
+  const mappedKeywords = sectorKeywords[kw]
+
+  const results = list.filter(
+    (item) =>
+      item.code.includes(kw) ||
+      item.name.toLowerCase().includes(kw) ||
+      item.pinyin.toLowerCase().includes(kw)
+  )
+
+  if (mappedKeywords) {
+    const keywordResults = list.filter((item) => {
+      const name = item.name.toLowerCase()
+      return mappedKeywords.some((k) => name.includes(k.toLowerCase()))
+    })
+    const existingCodes = new Set(results.map((r) => r.code))
+    keywordResults.forEach((item) => {
+      if (!existingCodes.has(item.code)) {
+        results.push(item)
+        existingCodes.add(item.code)
+      }
+    })
+  }
+
+  if (results.length < 10 && kw.length >= 2 && !mappedKeywords) {
+    const chars = kw.split('')
+    const charResults = list.filter((item) => {
+      const name = item.name.toLowerCase()
+      const matchCount = chars.filter((c) => name.includes(c)).length
+      return matchCount >= Math.min(2, chars.length)
+    })
+    const existingCodes = new Set(results.map((r) => r.code))
+    charResults.forEach((item) => {
+      if (!existingCodes.has(item.code)) {
+        results.push(item)
+        existingCodes.add(item.code)
+      }
+    })
+  }
+
+  return results.slice(0, limit)
+}
+
 // ========== 历史净值API（使用JSONP避免跨域） ==========
 
 /**
@@ -219,71 +512,33 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
   const cached = cache.get<{ records: NetValueRecord[], fundName: string }>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    // [WHY] 加载前清空全局变量，防止读到上一个脚本残留的数据
-    ; (window as any).Data_netWorthTrend = []
+  const result = await queueGlobalVarScript(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const trend = (window as any).Data_netWorthTrend || []
+      const fundName = (window as any).fS_name || ''
+      if (trend.length === 0) return { records: [] as NetValueRecord[], fundName }
 
-    const scriptId = `netvalue_${code}_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      resolve({ records: [], fundName: '' })
-    }, 15000)
-
-    const script = document.createElement('script')
-    script.id = scriptId
-    // [WHY] pingzhongdata.js 包含 Data_netWorthTrend 变量和 fS_name 变量
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-
-    script.onload = () => {
-      cleanup()
-      try {
-        // [WHAT] pingzhongdata 设置全局变量 Data_netWorthTrend 和 fS_name
-        const trend = (window as any).Data_netWorthTrend || []
-        const fundName = (window as any).fS_name || ''
-
-        if (trend.length === 0) {
-          resolve({ records: [], fundName })
-          return
+      const recentData = trend.slice(-days)
+      const records: NetValueRecord[] = recentData.map((item: any) => {
+        const date = new Date(item.x)
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        return {
+          date: dateStr,
+          netValue: item.y || 0,
+          totalValue: item.y || 0,
+          changeRate: item.equityReturn || 0
         }
+      })
+      records.reverse()
+      return { records, fundName }
+    },
+    ['Data_netWorthTrend', 'fS_name'],
+    { records: [], fundName: '' }
+  )
 
-        // [WHAT] 取最近N条数据
-        const recentData = trend.slice(-days)
-
-        const records: NetValueRecord[] = recentData.map((item: any) => {
-          const date = new Date(item.x)
-          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-          return {
-            date: dateStr,
-            netValue: item.y || 0,
-            totalValue: item.y || 0,
-            changeRate: item.equityReturn || 0
-          }
-        })
-
-        // [WHY] 反转数组保持跟原API一致：最新的在前
-        records.reverse()
-
-        cache.set(cacheKey, { records, fundName }, CACHE_TTL.NET_VALUE)
-        resolve({ records, fundName })
-      } catch (err) {
-        console.error('解析历史净值失败:', err)
-        resolve({ records: [], fundName: '' })
-      }
-    }
-
-    script.onerror = () => {
-      cleanup()
-      resolve({ records: [], fundName: '' })
-    }
-
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-
-    document.body.appendChild(script)
-  })
+  cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
+  return result
 }
 
 /**
@@ -364,156 +619,119 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
   const cached = cache.get<HoldingStock[]>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    ; (window as any).apidata = null
+  const top10 = await queueGlobalVarScript<HoldingStock[]>(
+    `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10&year=&month=&_=${Date.now()}`,
+    async () => {
+      const html = (window as any).apidata?.content || ''
+      if (!html) return []
 
-    const scriptId = `holdings_${code}_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      resolve([])
-    }, 15000)
+      const headerRow = (html.match(/<thead[\s\S]*?<tr[\s\S]*?<\/tr>[\s\S]*?<\/thead>/i) || [])[0] || ''
+      const headerCells = (headerRow.match(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi) || []).map((th: string) => th.replace(/<[^>]*>/g, '').trim())
+      let idxCode = -1, idxName = -1, idxWeight = -1
+      headerCells.forEach((h: string, i: number) => {
+        const t = h.replace(/\s+/g, '')
+        if (idxCode < 0 && (t.includes('股票代码') || t.includes('证券代码'))) idxCode = i
+        if (idxName < 0 && (t.includes('股票名称') || t.includes('证券名称'))) idxName = i
+        if (idxWeight < 0 && (t.includes('占净值比例') || t.includes('占比'))) idxWeight = i
+      })
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10&year=&month=&_=${Date.now()}`
+      const rows = html.match(/<tbody[\s\S]*?<\/tbody>/i) || []
+      const dataRows = rows.length ? rows[0].match(/<tr[\s\S]*?<\/tr>/gi) || [] : html.match(/<tr[\s\S]*?<\/tr>/gi) || []
 
-    script.onload = async () => {
-      cleanup()
-      try {
-        const html = (window as any).apidata?.content || ''
-        if (!html) {
-          resolve([])
-          return
+      const holdings: HoldingStock[] = []
+      for (const r of dataRows) {
+        const tds = (r.match(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi) || []).map((td: string) => td.replace(/<[^>]*>/g, '').trim())
+        if (!tds.length) continue
+
+        let stockCode = ''
+        let stockName = ''
+        let stockWeight = ''
+
+        if (idxCode >= 0 && tds[idxCode]) {
+          const m = tds[idxCode].match(/(\d{6})/)
+          stockCode = m ? m[1] : tds[idxCode]
+        } else {
+          const codeIdx = tds.findIndex((txt: string) => /^\d{6}$/.test(txt))
+          if (codeIdx >= 0) stockCode = tds[codeIdx]
         }
 
-        const headerRow = (html.match(/<thead[\s\S]*?<tr[\s\S]*?<\/tr>[\s\S]*?<\/thead>/i) || [])[0] || ''
-        const headerCells = (headerRow.match(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi) || []).map((th: string) => th.replace(/<[^>]*>/g, '').trim())
-        let idxCode = -1, idxName = -1, idxWeight = -1
-        headerCells.forEach((h: string, i: number) => {
-          const t = h.replace(/\s+/g, '')
-          if (idxCode < 0 && (t.includes('股票代码') || t.includes('证券代码'))) idxCode = i
-          if (idxName < 0 && (t.includes('股票名称') || t.includes('证券名称'))) idxName = i
-          if (idxWeight < 0 && (t.includes('占净值比例') || t.includes('占比'))) idxWeight = i
-        })
-
-        const rows = html.match(/<tbody[\s\S]*?<\/tbody>/i) || []
-        const dataRows = rows.length ? rows[0].match(/<tr[\s\S]*?<\/tr>/gi) || [] : html.match(/<tr[\s\S]*?<\/tr>/gi) || []
-
-        const holdings: HoldingStock[] = []
-        for (const r of dataRows) {
-          const tds = (r.match(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi) || []).map((td: string) => td.replace(/<[^>]*>/g, '').trim())
-          if (!tds.length) continue
-
-          let stockCode = ''
-          let stockName = ''
-          let stockWeight = ''
-
-          if (idxCode >= 0 && tds[idxCode]) {
-            const m = tds[idxCode].match(/(\d{6})/)
-            stockCode = m ? m[1] : tds[idxCode]
-          } else {
-            const codeIdx = tds.findIndex((txt: string) => /^\d{6}$/.test(txt))
-            if (codeIdx >= 0) stockCode = tds[codeIdx]
-          }
-
-          if (idxName >= 0 && tds[idxName]) {
-            stockName = tds[idxName]
-          } else if (stockCode) {
-            const i = tds.findIndex((txt: string) => txt && txt !== stockCode && !/%$/.test(txt))
-            stockName = i >= 0 ? tds[i] : ''
-          }
-
-          if (idxWeight >= 0 && tds[idxWeight]) {
-            const wm = tds[idxWeight].match(/([\d.]+)\s*%/)
-            stockWeight = wm ? `${wm[1]}%` : tds[idxWeight]
-          } else {
-            const wIdx = tds.findIndex((txt: string) => /\d+(?:\.\d+)?\s*%/.test(txt))
-            stockWeight = wIdx >= 0 ? (tds[wIdx].match(/([\d.]+)\s*%/)?.[1] + '%') : ''
-          }
-
-          if (stockCode || stockName || stockWeight) {
-            holdings.push({ code: stockCode, name: stockName, weight: stockWeight, change: null })
-          }
+        if (idxName >= 0 && tds[idxName]) {
+          stockName = tds[idxName]
+        } else if (stockCode) {
+          const i = tds.findIndex((txt: string) => txt && txt !== stockCode && !/%$/.test(txt))
+          stockName = i >= 0 ? tds[i] : ''
         }
 
-        const top10 = holdings.slice(0, 10)
-        const needQuotes = top10.filter(h => /^\d{6}$/.test(h.code) || /^\d{5}$/.test(h.code) || /^[A-Z]{1,6}$/.test(h.code))
-
-        if (needQuotes.length > 0) {
-          const tencentCodes = needQuotes.map(h => {
-            const cd = String(h.code || '')
-            if (/^\d{6}$/.test(cd)) {
-              const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
-              return `s_${pfx}${cd}`
-            }
-            if (/^\d{5}$/.test(cd)) {
-              return `s_hk${cd}`
-            }
-            if (/^[A-Z]{1,6}$/.test(cd)) {
-              return `s_us${cd}`
-            }
-            return null
-          }).filter(Boolean).join(',')
-
-          if (tencentCodes) {
-            await new Promise<void>((resQuote) => {
-              const scriptQuote = document.createElement('script')
-              scriptQuote.src = `https://qt.gtimg.cn/q=${tencentCodes}`
-              scriptQuote.onload = () => {
-                needQuotes.forEach(h => {
-                  const cd = String(h.code || '')
-                  let varName = ''
-                  if (/^\d{6}$/.test(cd)) {
-                    const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
-                    varName = `v_s_${pfx}${cd}`
-                  } else if (/^\d{5}$/.test(cd)) {
-                    varName = `v_s_hk${cd}`
-                  } else if (/^[A-Z]{1,6}$/.test(cd)) {
-                    varName = `v_s_us${cd}`
-                  } else {
-                    return
-                  }
-                  const dataStr = (window as any)[varName]
-                  if (dataStr) {
-                    const parts = dataStr.split('~')
-                    if (parts.length > 5) {
-                      h.change = parseFloat(parts[5])
-                    }
-                  }
-                })
-                if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
-                resQuote()
-              }
-              scriptQuote.onerror = () => {
-                if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
-                resQuote()
-              }
-              document.body.appendChild(scriptQuote)
-            })
-          }
+        if (idxWeight >= 0 && tds[idxWeight]) {
+          const wm = tds[idxWeight].match(/([\d.]+)\s*%/)
+          stockWeight = wm ? `${wm[1]}%` : tds[idxWeight]
+        } else {
+          const wIdx = tds.findIndex((txt: string) => /\d+(?:\.\d+)?\s*%/.test(txt))
+          stockWeight = wIdx >= 0 ? (tds[wIdx].match(/([\d.]+)\s*%/)?.[1] + '%') : ''
         }
 
-        cache.set(cacheKey, top10, CACHE_TTL.NET_VALUE)
-        resolve(top10)
-      } catch (err) {
-        console.error('[fetchTopHoldings] 解析失败:', err)
-        resolve([])
+        if (stockCode || stockName || stockWeight) {
+          holdings.push({ code: stockCode, name: stockName, weight: stockWeight, change: null })
+        }
       }
-    }
 
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
+      const topH = holdings.slice(0, 10)
+      const needQuotes = topH.filter((h) => /^\d{6}$/.test(h.code) || /^\d{5}$/.test(h.code) || /^[A-Z]{1,6}$/.test(h.code))
 
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
+      if (needQuotes.length > 0) {
+        const tencentCodes = needQuotes.map((h) => {
+          const cd = String(h.code || '')
+          if (/^\d{6}$/.test(cd)) {
+            const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
+            return `s_${pfx}${cd}`
+          }
+          if (/^\d{5}$/.test(cd)) return `s_hk${cd}`
+          if (/^[A-Z]{1,6}$/.test(cd)) return `s_us${cd}`
+          return null
+        }).filter(Boolean).join(',')
 
-    document.body.appendChild(script)
-  })
+        if (tencentCodes) {
+          await new Promise<void>((resQuote) => {
+            const scriptQuote = document.createElement('script')
+            scriptQuote.src = `https://qt.gtimg.cn/q=${tencentCodes}`
+            scriptQuote.onload = () => {
+              needQuotes.forEach((h) => {
+                const cd = String(h.code || '')
+                let varName = ''
+                if (/^\d{6}$/.test(cd)) {
+                  const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
+                  varName = `v_s_${pfx}${cd}`
+                } else if (/^\d{5}$/.test(cd)) {
+                  varName = `v_s_hk${cd}`
+                } else if (/^[A-Z]{1,6}$/.test(cd)) {
+                  varName = `v_s_us${cd}`
+                } else return
+                const dataStr = (window as any)[varName]
+                if (dataStr) {
+                  const parts = dataStr.split('~')
+                  if (parts.length > 5) h.change = parseFloat(parts[5])
+                }
+              })
+              if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+              resQuote()
+            }
+            scriptQuote.onerror = () => {
+              if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+              resQuote()
+            }
+            document.body.appendChild(scriptQuote)
+          })
+        }
+      }
+
+      return topH
+    },
+    ['apidata'],
+    []
+  )
+
+  cache.set(cacheKey, top10, CACHE_TTL.NET_VALUE)
+  return top10
 }
 
 // ========== 沪深300指数历史数据 ==========
@@ -529,73 +747,34 @@ export async function fetchHS300History(days = 90): Promise<NetValueRecord[]> {
   const cached = cache.get<NetValueRecord[]>(cacheKey)
   if (cached) return cached
 
-  // [WHY] 使用沪深300ETF基金代码 510300（华泰柏瑞沪深300ETF）
-  // 指数代码 000300 在 pingzhongdata API 上不支持，会读到上一个基金的全局变量
   const hs300Code = '510300'
 
-  return new Promise((resolve) => {
-    // [WHY] 加载前清空全局变量，防止读到上一个基金的数据
-    ; (window as any).Data_netWorthTrend = []
+  const records = await queueGlobalVarScript<NetValueRecord[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${hs300Code}.js?v=${Date.now()}`,
+    () => {
+      const trend = (window as any).Data_netWorthTrend || []
+      if (trend.length === 0) return []
 
-    const scriptId = `hs300_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      console.warn('[fetchHS300History] 加载超时')
-      resolve([])
-    }, 15000)
-
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${hs300Code}.js?v=${Date.now()}`
-
-    script.onload = () => {
-      cleanup()
-      try {
-        const trend = (window as any).Data_netWorthTrend || []
-
-        if (trend.length === 0) {
-          console.warn('[fetchHS300History] Data_netWorthTrend 为空，API可能不支持该代码')
-          resolve([])
-          return
+      const recentData = trend.slice(-days)
+      const result: NetValueRecord[] = recentData.map((item: any) => {
+        const date = new Date(item.x)
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        return {
+          date: dateStr,
+          netValue: item.y || 0,
+          totalValue: item.y || 0,
+          changeRate: item.equityReturn || 0
         }
+      })
+      result.reverse()
+      return result
+    },
+    ['Data_netWorthTrend'],
+    []
+  )
 
-        const recentData = trend.slice(-days)
-
-        const records: NetValueRecord[] = recentData.map((item: any) => {
-          const date = new Date(item.x)
-          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-          return {
-            date: dateStr,
-            netValue: item.y || 0,
-            totalValue: item.y || 0,
-            changeRate: item.equityReturn || 0
-          }
-        })
-
-        records.reverse()
-
-        cache.set(cacheKey, records, CACHE_TTL.NET_VALUE)
-        resolve(records)
-      } catch (err) {
-        console.error('[fetchHS300History] 解析失败:', err)
-        resolve([])
-      }
-    }
-
-    script.onerror = () => {
-      cleanup()
-      console.warn('[fetchHS300History] 脚本加载失败')
-      resolve([])
-    }
-
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-
-    document.body.appendChild(script)
-  })
+  cache.set(cacheKey, records, CACHE_TTL.NET_VALUE)
+  return records
 }
 
 /**
@@ -1100,89 +1279,44 @@ export async function fetchFundManagerInfo(fundCode: string): Promise<FundManage
   const cached = cache.get<FundManagerInfo>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    const scriptId = `manager_${fundCode}_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      resolve(null)
-    }, 15000)
+  const manager = await queueGlobalVarScript<FundManagerInfo | null>(
+    `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`,
+    () => {
+      const managerData = (window as any).Data_currentFundManager || []
+      if (managerData.length === 0) return null
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`
+      const main = managerData[0]
 
-    script.onload = () => {
-      cleanup()
-      try {
-        // [WHAT] 解析经理数据
-        const managerData = (window as any).Data_currentFundManager || []
-
-        if (managerData.length === 0) {
-          resolve(null)
-          return
-        }
-
-        // [WHY] 通常取第一个经理（主要管理人）
-        const main = managerData[0]
-
-        // [WHAT] 安全提取最佳回报
-        // [EDGE] profit 是复杂对象: { series: [{ data: [{ y: 99.13 }] }] }
-        // 其中 data[0].y 是任期收益
-        let bestReturn = '--'
-        if (main.profit && typeof main.profit === 'object') {
-          try {
-            const val = main.profit.series?.[0]?.data?.[0]?.y
-            if (val !== undefined && val !== null) {
-              bestReturn = `${val.toFixed(2)}%`
-            }
-          } catch {
-            bestReturn = '--'
-          }
-        }
-
-        // [WHAT] 提取经理能力评估信息
-        // [EDGE] power 包含能力雷达图数据
-        let experience = ''
-        if (main.power?.categories && main.power?.data) {
-          // 组合能力评估为简要说明
-          const abilities = main.power.categories.map((cat: string, i: number) =>
-            `${cat}: ${main.power.data[i]?.toFixed?.(1) || main.power.data[i] || '--'}分`
-          ).join('、')
-          experience = `综合能力评分 ${main.power.avr || '--'}。${abilities}`
-        }
-
-        const manager: FundManagerInfo = {
-          name: main.name || '未知',
-          photo: main.pic || '',
-          workTime: main.workTime || '--',
-          fundSize: main.fundSize || '--',
-          bestReturn,
-          experience,
-          // [EDGE] pingzhongdata 不包含基金列表，受 CORS 限制暂无法获取
-          funds: []
-        }
-
-        cache.set(cacheKey, manager, CACHE_TTL.FUND_INFO)
-        resolve(manager)
-      } catch (err) {
-        console.error('解析经理数据失败:', err)
-        resolve(null)
+      let bestReturn = '--'
+      if (main.profit && typeof main.profit === 'object') {
+        const val = main.profit.series?.[0]?.data?.[0]?.y
+        if (val !== undefined && val !== null) bestReturn = `${val.toFixed(2)}%`
       }
-    }
 
-    script.onerror = () => {
-      cleanup()
-      resolve(null)
-    }
+      let experience = ''
+      if (main.power?.categories && main.power?.data) {
+        const abilities = main.power.categories.map((cat: string, i: number) =>
+          `${cat}: ${main.power.data[i]?.toFixed?.(1) || main.power.data[i] || '--'}分`
+        ).join('、')
+        experience = `综合能力评分 ${main.power.avr || '--'}。${abilities}`
+      }
 
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
+      return {
+        name: main.name || '未知',
+        photo: main.pic || '',
+        workTime: main.workTime || '--',
+        fundSize: main.fundSize || '--',
+        bestReturn,
+        experience,
+        funds: []
+      }
+    },
+    ['Data_currentFundManager'],
+    null
+  )
 
-    document.body.appendChild(script)
-  })
+  if (manager) cache.set(cacheKey, manager, CACHE_TTL.FUND_INFO)
+  return manager
 }
 
 export async function fetchFundRankingFast(
@@ -1234,77 +1368,43 @@ export async function fetchManagerProfit(fundCode: string): Promise<ManagerProfi
   const cached = cache.get<ManagerProfitPoint[]>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    const scriptId = `mprofit_${fundCode}_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      resolve([])
-    }, 10000)
+  const result = await queueGlobalVarScript<ManagerProfitPoint[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`,
+    () => {
+      const grandTotal = (window as any).Data_grandTotal || []
+      if (!Array.isArray(grandTotal) || grandTotal.length === 0) return []
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`
+      const step = Math.max(1, Math.floor(grandTotal.length / 200))
+      const points: ManagerProfitPoint[] = []
 
-    script.onload = () => {
-      cleanup()
-
-      try {
-        // [WHAT] Data_grandTotal 格式: [[timestamp, value], ...]
-        // 表示累计收益率走势
-        const grandTotal = (window as any).Data_grandTotal || []
-
-        if (!Array.isArray(grandTotal) || grandTotal.length === 0) {
-          resolve([])
-          return
-        }
-
-        // [WHAT] 转换为日期-收益率格式
-        // [EDGE] 数据量可能很大，采样到最多200个点
-        const step = Math.max(1, Math.floor(grandTotal.length / 200))
-        const result: ManagerProfitPoint[] = []
-
-        for (let i = 0; i < grandTotal.length; i += step) {
-          const item = grandTotal[i]
-          if (Array.isArray(item) && item.length >= 2) {
-            const date = new Date(item[0])
-            result.push({
-              date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-              profit: item[1] || 0
-            })
-          }
-        }
-
-        // [EDGE] 确保包含最后一个点
-        const last = grandTotal[grandTotal.length - 1]
-        const lastResult = result[result.length - 1]
-        if (last && lastResult && lastResult.date !== new Date(last[0]).toISOString().split('T')[0]) {
-          const date = new Date(last[0])
-          result.push({
+      for (let i = 0; i < grandTotal.length; i += step) {
+        const item = grandTotal[i]
+        if (Array.isArray(item) && item.length >= 2) {
+          const date = new Date(item[0])
+          points.push({
             date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-            profit: last[1] || 0
+            profit: item[1] || 0
           })
         }
-
-        cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
-        resolve(result)
-      } catch {
-        resolve([])
       }
-    }
 
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
+      const last = grandTotal[grandTotal.length - 1]
+      const lastResult = points[points.length - 1]
+      if (last && lastResult && lastResult.date !== new Date(last[0]).toISOString().split('T')[0]) {
+        const date = new Date(last[0])
+        points.push({
+          date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+          profit: last[1] || 0
+        })
+      }
+      return points
+    },
+    ['Data_grandTotal'],
+    []
+  )
 
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-
-    document.body.appendChild(script)
-  })
+  cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
+  return result
 }
 
 // ========== 全球指数 ==========
@@ -1461,50 +1561,27 @@ export async function fetchIndustryAllocation(code: string): Promise<IndustryAll
   const cached = cache.get<IndustryAllocation[]>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    const scriptId = `industry_${code}_${Date.now()}`
-    const timeout = setTimeout(() => { cleanup(); resolve([]) }, 10000)
+  const result = await queueGlobalVarScript<IndustryAllocation[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const data = (window as any).Data_IndustryAllocation
+      if (!data?.series?.[0]?.data) return []
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
+      return data.series[0].data
+        .filter((item: any) => item.y > 0)
+        .slice(0, 10)
+        .map((item: any, idx: number) => ({
+          name: item.name || '其他',
+          ratio: parseFloat(item.y?.toFixed(2)) || 0,
+          color: CHART_COLORS[idx % CHART_COLORS.length]
+        }))
+    },
+    ['Data_IndustryAllocation'],
+    []
+  )
 
-    script.onload = () => {
-      cleanup()
-      try {
-        // [WHAT] Data_IndustryAllocation 格式: { series: [{ data: [{name, y}] }] }
-        const data = (window as any).Data_IndustryAllocation
-        if (!data?.series?.[0]?.data) {
-          resolve([])
-          return
-        }
-
-        const industries: IndustryAllocation[] = data.series[0].data
-          .filter((item: any) => item.y > 0)
-          .slice(0, 10)
-          .map((item: any, idx: number) => ({
-            name: item.name || '其他',
-            ratio: parseFloat(item.y?.toFixed(2)) || 0,
-            color: CHART_COLORS[idx % CHART_COLORS.length]
-          }))
-
-        cache.set(cacheKey, industries, CACHE_TTL.FUND_INFO)
-        resolve(industries)
-      } catch {
-        resolve([])
-      }
-    }
-
-    script.onerror = () => { cleanup(); resolve([]) }
-
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-
-    document.body.appendChild(script)
-  })
+  cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }
 
 /**
@@ -1516,55 +1593,31 @@ export async function fetchAssetAllocation(code: string): Promise<AssetAllocatio
   const cached = cache.get<AssetAllocation>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    const scriptId = `asset_${code}_${Date.now()}`
-    const timeout = setTimeout(() => { cleanup(); resolve(null) }, 10000)
+  const result = await queueGlobalVarScript<AssetAllocation | null>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const data = (window as any).Data_assetAllocation
+      if (!data?.series) return null
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-
-    script.onload = () => {
-      cleanup()
-      try {
-        // [WHAT] Data_assetAllocation 格式: { series: [{name, data:[...]}, ...] }
-        const data = (window as any).Data_assetAllocation
-        if (!data?.series) {
-          resolve(null)
-          return
-        }
-
-        // [WHAT] 提取最新一期的配置（data数组最后一个元素）
-        const getSeries = (name: string) => {
-          const s = data.series.find((item: any) => item.name === name)
-          if (!s?.data?.length) return 0
-          return s.data[s.data.length - 1] || 0
-        }
-
-        const asset: AssetAllocation = {
-          stock: parseFloat(getSeries('股票占净比').toFixed(2)),
-          bond: parseFloat(getSeries('债券占净比').toFixed(2)),
-          cash: parseFloat(getSeries('现金占净比').toFixed(2)),
-          other: parseFloat(getSeries('其他占净比').toFixed(2))
-        }
-
-        cache.set(cacheKey, asset, CACHE_TTL.FUND_INFO)
-        resolve(asset)
-      } catch {
-        resolve(null)
+      const getSeries = (name: string) => {
+        const s = data.series.find((item: any) => item.name === name)
+        if (!s?.data?.length) return 0
+        return s.data[s.data.length - 1] || 0
       }
-    }
 
-    script.onerror = () => { cleanup(); resolve(null) }
+      return {
+        stock: parseFloat(getSeries('股票占净比').toFixed(2)),
+        bond: parseFloat(getSeries('债券占净比').toFixed(2)),
+        cash: parseFloat(getSeries('现金占净比').toFixed(2)),
+        other: parseFloat(getSeries('其他占净比').toFixed(2))
+      }
+    },
+    ['Data_assetAllocation'],
+    null
+  )
 
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-
-    document.body.appendChild(script)
-  })
+  if (result) cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }
 
 /**
@@ -1576,99 +1629,69 @@ export async function fetchFundRating(code: string): Promise<FundRating | null> 
   const cached = cache.get<FundRating>(cacheKey)
   if (cached) return cached
 
-  return new Promise((resolve) => {
-    const scriptId = `rating_${code}_${Date.now()}`
-    const timeout = setTimeout(() => { cleanup(); resolve(null) }, 10000)
+  const result = await queueGlobalVarScript<FundRating | null>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const rateInSimilar = (window as any).Data_rateInSimilarType || []
+      const performanceData = (window as any).Data_rateInSimilarPers498 || []
+      const fluctuation = (window as any).Data_fluctuationScale || {}
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-
-    script.onload = () => {
-      cleanup()
-      try {
-        // [WHAT] 从多个全局变量提取评级数据
-        const rateInSimilar = (window as any).Data_rateInSimilarType || []
-        const performanceData = (window as any).Data_rateInSimilarPers498 || []
-        const fluctuation = (window as any).Data_fluctuationScale || {}
-
-        // [WHAT] 计算综合评级（基于同类排名）
-        let rating = 3
-        if (rateInSimilar.length > 0) {
-          const latestRank = rateInSimilar[rateInSimilar.length - 1]
-          if (latestRank) {
-            // [HOW] 排名百分比转评级：前20%=5星，前40%=4星...
-            const rankPercent = (latestRank.rank / latestRank.total) * 100
-            if (rankPercent <= 20) rating = 5
-            else if (rankPercent <= 40) rating = 4
-            else if (rankPercent <= 60) rating = 3
-            else if (rankPercent <= 80) rating = 2
-            else rating = 1
-          }
+      let rating = 3
+      if (rateInSimilar.length > 0) {
+        const latestRank = rateInSimilar[rateInSimilar.length - 1]
+        if (latestRank) {
+          const rankPercent = (latestRank.rank / latestRank.total) * 100
+          if (rankPercent <= 20) rating = 5
+          else if (rankPercent <= 40) rating = 4
+          else if (rankPercent <= 60) rating = 3
+          else if (rankPercent <= 80) rating = 2
+          else rating = 1
         }
-
-        // [WHAT] 提取风险指标
-        let sharpeRatio = 0, maxDrawdown = 0, volatility = 0
-        if (fluctuation?.series) {
-          // 夏普比率
-          const sharpe = fluctuation.series.find((s: any) => s.name?.includes('夏普'))
-          if (sharpe?.data?.length) sharpeRatio = sharpe.data[sharpe.data.length - 1] || 0
-
-          // 波动率
-          const vol = fluctuation.series.find((s: any) => s.name?.includes('标准差') || s.name?.includes('波动'))
-          if (vol?.data?.length) volatility = vol.data[vol.data.length - 1] || 0
-        }
-
-        // [WHAT] 从业绩数据提取最大回撤
-        if (performanceData.length > 0) {
-          const values = performanceData.map((d: any) => d.y || d)
-          const max = Math.max(...values)
-          const min = Math.min(...values)
-          maxDrawdown = max > 0 ? ((max - min) / max) * 100 : 0
-        }
-
-        // [WHAT] 风险等级判断
-        let riskLevel = '中风险'
-        if (volatility < 10) riskLevel = '低风险'
-        else if (volatility < 20) riskLevel = '中低风险'
-        else if (volatility < 30) riskLevel = '中风险'
-        else if (volatility < 40) riskLevel = '中高风险'
-        else riskLevel = '高风险'
-
-        // [WHAT] 同类排名
-        let rankInSimilar = '--'
-        if (rateInSimilar.length > 0) {
-          const latest = rateInSimilar[rateInSimilar.length - 1]
-          // [EDGE] 确保 rank 和 total 都存在且有效
-          if (latest && latest.rank !== undefined && latest.total !== undefined) {
-            rankInSimilar = `${latest.rank}/${latest.total}`
-          }
-        }
-
-        const result: FundRating = {
-          rating,
-          riskLevel,
-          sharpeRatio: parseFloat(sharpeRatio.toFixed(2)),
-          maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
-          volatility: parseFloat(volatility.toFixed(2)),
-          rankInSimilar
-        }
-
-        cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-        resolve(result)
-      } catch {
-        resolve(null)
       }
-    }
 
-    script.onerror = () => { cleanup(); resolve(null) }
+      let sharpeRatio = 0, maxDrawdown = 0, volatility = 0
+      if (fluctuation?.series) {
+        const sharpe = fluctuation.series.find((s: any) => s.name?.includes('夏普'))
+        if (sharpe?.data?.length) sharpeRatio = sharpe.data[sharpe.data.length - 1] || 0
+        const vol = fluctuation.series.find((s: any) => s.name?.includes('标准差') || s.name?.includes('波动'))
+        if (vol?.data?.length) volatility = vol.data[vol.data.length - 1] || 0
+      }
 
-    function cleanup() {
-      clearTimeout(timeout)
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
+      if (performanceData.length > 0) {
+        const values = performanceData.map((d: any) => d.y || d)
+        const max = Math.max(...values)
+        const min = Math.min(...values)
+        maxDrawdown = max > 0 ? ((max - min) / max) * 100 : 0
+      }
 
-    document.body.appendChild(script)
-  })
+      let riskLevel = '中风险'
+      if (volatility < 10) riskLevel = '低风险'
+      else if (volatility < 20) riskLevel = '中低风险'
+      else if (volatility < 30) riskLevel = '中风险'
+      else if (volatility < 40) riskLevel = '中高风险'
+      else riskLevel = '高风险'
+
+      let rankInSimilar = '--'
+      if (rateInSimilar.length > 0) {
+        const latest = rateInSimilar[rateInSimilar.length - 1]
+        if (latest && latest.rank !== undefined && latest.total !== undefined) {
+          rankInSimilar = `${latest.rank}/${latest.total}`
+        }
+      }
+
+      return {
+        rating,
+        riskLevel,
+        sharpeRatio: parseFloat(sharpeRatio.toFixed(2)),
+        maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
+        volatility: parseFloat(volatility.toFixed(2)),
+        rankInSimilar
+      }
+    },
+    ['Data_rateInSimilarType', 'Data_rateInSimilarPers498', 'Data_fluctuationScale'],
+    null
+  )
+
+  if (result) cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }

@@ -6,7 +6,7 @@
 import { ref, computed } from 'vue'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
 import { recognizeHoldings, type RecognizedHolding } from '@/utils/ocr'
-import { searchFund, fetchFundEstimate, fetchFundList } from '@/api/fund'
+import { searchFund, fetchFundEstimate, fetchFundList } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
 import { useHoldingStore } from '@/stores/holding'
 import { requestPermissions } from '@/utils/permissions'

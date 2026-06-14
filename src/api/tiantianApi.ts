@@ -3,6 +3,7 @@
 // [DEPS] 使用 JSONP 和 fetch 直接请求天天基金接口
 
 import { cache, CACHE_TTL } from './cache'
+import { queueGlobalVarScript } from './fundFast'
 
 // ========== 交易时间和持久化缓存工具 ==========
 
@@ -326,74 +327,48 @@ export async function fetchPeriodReturnExt(code: string): Promise<PeriodReturnEx
   const cacheKey = `period_ext_${code}`
   const cached = cache.get<PeriodReturnExt[]>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `period_${code}_${Date.now()}`
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-    
-    script.onload = () => {
-      cleanup()
-      
-      try {
-        // [WHAT] 从全局变量获取数据
-        const periodData = (window as any).Data_rateInSimilarPers498 || []
-        
-        // [WHAT] API原始key -> 标准化period -> 显示标签
-        const periodConfig: Record<string, { period: string, label: string }> = {
-          'Z': { period: '1w', label: '近1周' },
-          'Y': { period: '1m', label: '近1月' },
-          '3Y': { period: '3m', label: '近3月' },
-          '6Y': { period: '6m', label: '近6月' },
-          '1N': { period: '1y', label: '近1年' },
-          '2N': { period: '2y', label: '近2年' },
-          '3N': { period: '3y', label: '近3年' },
-          '5N': { period: '5y', label: '近5年' },
-          'JN': { period: 'ytd', label: '今年来' },
-          'LN': { period: 'all', label: '成立来' }
-        }
-        
-        const result: PeriodReturnExt[] = []
-        
-        // [WHAT] 解析阶段涨幅数据，转换为标准化格式
-        if (Array.isArray(periodData)) {
-          periodData.forEach((item: any) => {
-            const config = periodConfig[item.title]
-            if (config) {
-              result.push({
-                period: config.period,
-                label: config.label,
-                fundReturn: parseFloat(item.syl) || 0,
-                avgReturn: parseFloat(item.avg) || 0,
-                hs300Return: parseFloat(item.hs300) || 0,
-                rank: parseInt(item.rank) || 0,
-                totalCount: parseInt(item.sc) || 0
-              })
-            }
-          })
-        }
-        
-        cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
-        resolve(result)
-      } catch {
-        resolve([])
+
+  const result = await queueGlobalVarScript<PeriodReturnExt[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const periodData = (window as any).Data_rateInSimilarPers498 || []
+      const periodConfig: Record<string, { period: string, label: string }> = {
+        'Z': { period: '1w', label: '近1周' },
+        'Y': { period: '1m', label: '近1月' },
+        '3Y': { period: '3m', label: '近3月' },
+        '6Y': { period: '6m', label: '近6月' },
+        '1N': { period: '1y', label: '近1年' },
+        '2N': { period: '2y', label: '近2年' },
+        '3N': { period: '3y', label: '近3年' },
+        '5N': { period: '5y', label: '近5年' },
+        'JN': { period: 'ytd', label: '今年来' },
+        'LN': { period: 'all', label: '成立来' }
       }
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    document.body.appendChild(script)
-  })
+      const items: PeriodReturnExt[] = []
+      if (Array.isArray(periodData)) {
+        periodData.forEach((item: any) => {
+          const config = periodConfig[item.title]
+          if (config) {
+            items.push({
+              period: config.period,
+              label: config.label,
+              fundReturn: parseFloat(item.syl) || 0,
+              avgReturn: parseFloat(item.avg) || 0,
+              hs300Return: parseFloat(item.hs300) || 0,
+              rank: parseInt(item.rank) || 0,
+              totalCount: parseInt(item.sc) || 0
+            })
+          }
+        })
+      }
+      return items
+    },
+    ['Data_rateInSimilarPers498'],
+    []
+  )
+
+  cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
+  return result
 }
 
 // ========== 热门主题/板块 ==========
@@ -442,54 +417,25 @@ export async function fetchFundRating(code: string): Promise<FundRating | null> 
   const cacheKey = `rating_${code}`
   const cached = cache.get<FundRating>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `rating_${code}_${Date.now()}`
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-    
-    script.onload = () => {
-      cleanup()
-      
-      try {
-        // [WHAT] 从全局变量获取评级数据
-        // Data_performanceEvaluation 包含基金能力评估
-        const evalData = (window as any).Data_performanceEvaluation
-        
-        if (!evalData) {
-          resolve(null)
-          return
-        }
-        
-        // [EDGE] 简化为综合评分
-        const result: FundRating = {
-          date: new Date().toISOString().split('T')[0] ?? '',
-          shanghai: 0,
-          zhaoshang: 0,
-          jian: Math.round(parseFloat(evalData.avr) / 20) || 0 // 转换为1-5星
-        }
-        
-        cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-        resolve(result)
-      } catch {
-        resolve(null)
+
+  const result = await queueGlobalVarScript<FundRating | null>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const evalData = (window as any).Data_performanceEvaluation
+      if (!evalData) return null
+      return {
+        date: new Date().toISOString().split('T')[0] ?? '',
+        shanghai: 0,
+        zhaoshang: 0,
+        jian: Math.round(parseFloat(evalData.avr) / 20) || 0
       }
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve(null)
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    document.body.appendChild(script)
-  })
+    },
+    ['Data_performanceEvaluation'],
+    null
+  )
+
+  if (result) cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }
 
 // ========== 基金持仓变动 ==========
@@ -510,48 +456,25 @@ export async function fetchHoldingChanges(code: string): Promise<HoldingChange[]
   const cacheKey = `holding_change_${code}`
   const cached = cache.get<HoldingChange[]>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `holding_${code}_${Date.now()}`
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-    
-    script.onload = () => {
-      cleanup()
-      
-      try {
-        // [WHAT] 从 Data_fundSharesPositions 获取持仓数据
-        const stockPositions = (window as any).Data_investPosition?.fundStocks || []
-        
-        const result: HoldingChange[] = stockPositions.slice(0, 10).map((item: any) => ({
-          stockCode: item.GPDM || '',
-          stockName: item.GPJC || '',
-          ratio: parseFloat(item.JZBL) || 0,
-          change: parseFloat(item.PCTNVCHG) || 0,
-          marketValue: parseFloat(item.GPJC) || 0
-        }))
-        
-        cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-        resolve(result)
-      } catch {
-        resolve([])
-      }
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    document.body.appendChild(script)
-  })
+
+  const result = await queueGlobalVarScript<HoldingChange[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const stockPositions = (window as any).Data_investPosition?.fundStocks || []
+      return stockPositions.slice(0, 10).map((item: any) => ({
+        stockCode: item.GPDM || '',
+        stockName: item.GPJC || '',
+        ratio: parseFloat(item.JZBL) || 0,
+        change: parseFloat(item.PCTNVCHG) || 0,
+        marketValue: parseFloat(item.GPJC) || 0
+      }))
+    },
+    ['Data_investPosition'],
+    []
+  )
+
+  cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }
 
 // ========== 同类基金对比 ==========
@@ -573,60 +496,35 @@ export async function fetchSimilarFunds(code: string): Promise<SimilarFund[]> {
   const cacheKey = `similar_${code}`
   const cached = cache.get<SimilarFund[]>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `similar_${code}_${Date.now()}`
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-    
-    script.onload = () => {
-      cleanup()
-      
-      try {
-        // [WHAT] 从 swithSameType 获取同类基金
-        const sameType = (window as any).swithSameType || []
-        
-        const result: SimilarFund[] = []
-        
-        // [WHAT] sameType 是二维数组，每个子数组是一个周期的同类排行
-        // 取年度排行
-        if (sameType[3]) {
-          sameType[3].slice(0, 5).forEach((item: string) => {
-            const parts = item.split('_')
-            if (parts.length >= 3) {
-              result.push({
-                code: parts[0] ?? '',
-                name: parts[1] ?? '',
-                yearReturn: parseFloat(parts[2] ?? '0') || 0,
-                threeYearReturn: 0,
-                scale: 0,
-                manager: ''
-              })
-            }
-          })
-        }
-        
-        cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-        resolve(result)
-      } catch {
-        resolve([])
+
+  const result = await queueGlobalVarScript<SimilarFund[]>(
+    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
+    () => {
+      const sameType = (window as any).swithSameType || []
+      const items: SimilarFund[] = []
+      if (sameType[3]) {
+        sameType[3].slice(0, 5).forEach((item: string) => {
+          const parts = item.split('_')
+          if (parts.length >= 3) {
+            items.push({
+              code: parts[0] ?? '',
+              name: parts[1] ?? '',
+              yearReturn: parseFloat(parts[2] ?? '0') || 0,
+              threeYearReturn: 0,
+              scale: 0,
+              manager: ''
+            })
+          }
+        })
       }
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    document.body.appendChild(script)
-  })
+      return items
+    },
+    ['swithSameType'],
+    []
+  )
+
+  cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+  return result
 }
 
 // ========== 基金经理排行榜 ==========
@@ -648,8 +546,8 @@ export interface ManagerRankItem {
  * [HOW] 从基金排行数据中提取经理信息并去重汇总
  */
 export async function fetchManagerRank(options: {
-  sortBy?: string         // penavgrowth平均回报 workyear从业年限
-  sortOrder?: string      // desc/asc
+  sortBy?: string
+  sortOrder?: string
   page?: number
   pageSize?: number
 } = {}): Promise<ManagerRankItem[]> {
@@ -657,139 +555,86 @@ export async function fetchManagerRank(options: {
     sortBy = 'penavgrowth',
     pageSize = 30
   } = options
-  
+
   const cacheKey = `manager_rank_${sortBy}_${pageSize}`
   const cached = cache.get<ManagerRankItem[]>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `manager_rank_${Date.now()}`
-    
-    // [WHAT] 使用基金排行数据提取经理信息
-    const url = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&pi=1&pn=500&dx=1&v=${Date.now()}`
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    
-    // [WHAT] 等待 rankData 变量
-    script.onload = () => {
-      cleanup()
-      
-      try {
-        const rankData = (window as any).rankData
-        if (!rankData?.datas) {
-          resolve([])
-          return
+
+  const result = await queueGlobalVarScript<ManagerRankItem[]>(
+    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&pi=1&pn=500&dx=1&v=${Date.now()}`,
+    () => {
+      const rankData = (window as any).rankData
+      if (!rankData?.datas) return []
+
+      const managerMap = new Map<string, {
+        name: string
+        company: string
+        funds: { name: string, return: number }[]
+        totalReturn: number
+      }>()
+
+      rankData.datas.forEach((row: string) => {
+        const cols = row.split(',')
+
+        let managerName = ''
+        for (const idx of [18, 24, 19, 23]) {
+          const val = cols[idx]
+          if (val && val !== '--' && val.length > 0 && val.length < 20 && !/^\d+(\.\d+)?%?$/.test(val)) {
+            managerName = val
+            break
+          }
         }
-        
-        // [WHAT] 从基金数据中提取经理信息
-        // 格式: "代码,名称,...,经理,..."
-        const managerMap = new Map<string, {
-          name: string
-          company: string
-          funds: { name: string, return: number }[]
-          totalReturn: number
-        }>()
-        
-        // [WHAT] 天天基金数据格式（示例）：
-        // 0=代码, 1=名称, 2=简称, 3=日期, 4=单位净值, 5=累计净值
-        // 6=日涨幅, 7=周涨幅, 8=月涨幅, 9=3月涨幅, 10=6月涨幅, 11=年涨幅
-        // 12=2年涨幅, 13=3年涨幅, 14=今年涨幅, 15=成立涨幅
-        // 16=手续费, 17=申购状态, 18=基金经理, 19=...
-        
-        rankData.datas.forEach((row: string) => {
-          const cols = row.split(',')
-          
-          // [WHAT] 尝试多个可能的经理名称位置
-          let managerName = ''
-          // 通常在第18或第24位置
-          for (const idx of [18, 24, 19, 23]) {
-            const val = cols[idx]
-            if (val && val !== '--' && val.length > 0 && val.length < 20 && !/^\d+(\.\d+)?%?$/.test(val)) {
-              managerName = val
-              break
+
+        const fundName = cols[1] ?? ''
+        const yearReturn = parseFloat(cols[11] ?? '0') || 0
+
+        if (managerName) {
+          const managers = managerName.split(/[\s、]+/)
+          managers.forEach(mgr => {
+            const name = mgr.trim()
+            if (!name || name.length > 10) return
+
+            if (managerMap.has(name)) {
+              const data = managerMap.get(name)!
+              data.funds.push({ name: fundName, return: yearReturn })
+              data.totalReturn += yearReturn
+            } else {
+              managerMap.set(name, {
+                name,
+                company: '--',
+                funds: [{ name: fundName, return: yearReturn }],
+                totalReturn: yearReturn
+              })
             }
-          }
-          
-          const fundName = cols[1] ?? ''
-          const yearReturn = parseFloat(cols[11] ?? '0') || 0
-          
-          if (managerName) {
-            // [WHAT] 处理多经理情况（用空格或顿号分隔）
-            const managers = managerName.split(/[\s、]+/)
-            managers.forEach(mgr => {
-              const name = mgr.trim()
-              if (!name || name.length > 10) return // 过滤无效名称
-              
-              if (managerMap.has(name)) {
-                const data = managerMap.get(name)!
-                data.funds.push({ name: fundName, return: yearReturn })
-                data.totalReturn += yearReturn
-              } else {
-                managerMap.set(name, {
-                  name,
-                  company: '--',
-                  funds: [{ name: fundName, return: yearReturn }],
-                  totalReturn: yearReturn
-                })
-              }
-            })
-          }
-        })
-        
-        // [WHAT] 转换为结果数组
-        let result: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
-          managerId: m.name,
-          name: m.name,
-          company: m.company,
-          workTime: '--',  // 基金排行数据不包含从业年限
-          fundCount: m.funds.length,
-          scale: '--',
-          bestReturn: Math.max(...m.funds.map(f => f.return)),
-          avgReturn: m.totalReturn / m.funds.length
-        }))
-        
-        // [WHAT] 排序
-        if (sortBy === 'workyear') {
-          // 按基金数量排序（替代从业年限）
-          result.sort((a, b) => b.fundCount - a.fundCount)
-        } else {
-          // 按平均回报排序
-          result.sort((a, b) => b.avgReturn - a.avgReturn)
+          })
         }
-        
-        // [WHAT] 取前N个
-        result = result.slice(0, pageSize)
-        
-        cache.set(cacheKey, result, CACHE_TTL.FUND_LIST)
-        resolve(result)
-      } catch {
-        resolve([])
+      })
+
+      let items: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
+        managerId: m.name,
+        name: m.name,
+        company: m.company,
+        workTime: '--',
+        fundCount: m.funds.length,
+        scale: '--',
+        bestReturn: Math.max(...m.funds.map(f => f.return)),
+        avgReturn: m.totalReturn / m.funds.length
+      }))
+
+      if (sortBy === 'workyear') {
+        items.sort((a, b) => b.fundCount - a.fundCount)
+      } else {
+        items.sort((a, b) => b.avgReturn - a.avgReturn)
       }
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    // [WHAT] 超时处理
-    setTimeout(() => {
-      const s = document.getElementById(scriptId)
-      if (s) {
-        cleanup()
-        resolve([])
-      }
-    }, 15000)
-    
-    script.src = url
-    document.body.appendChild(script)
-  })
+
+      return items.slice(0, pageSize)
+    },
+    ['rankData'],
+    []
+  )
+
+  cache.set(cacheKey, result, CACHE_TTL.FUND_LIST)
+  return result
 }
 
 // ========== 基金涨跌分布 ==========
@@ -816,24 +661,18 @@ export interface MarketOverview {
  */
 export async function fetchMarketOverview(): Promise<MarketOverview> {
   const cacheKey = 'market_overview_v2'
-  
-  // [WHAT] 检查内存缓存
+
   const cached = cache.get<MarketOverview>(cacheKey)
   if (cached) return cached
-  
-  // [WHAT] 获取持久化缓存
+
   const persisted = persistCache.get<MarketOverview>(cacheKey)
-  
-  // [WHAT] 检测是否是原生 APP 环境（Capacitor WebView）
   const isNativeApp = !!(window as any).Capacitor?.isNativePlatform?.()
-  
-  // [WHAT] 非交易时间直接返回持久化缓存（周末/节假日/盘前盘后）
+
   if (!isTradingTime()) {
     if (persisted && (persisted.totalUp > 0 || persisted.totalDown > 0)) {
       cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
       return persisted
     }
-    // [EDGE] 没有缓存，初始化默认数据
     initMobileDefaultCache()
     const defaultData = persistCache.get<MarketOverview>(cacheKey)
     if (defaultData) {
@@ -841,203 +680,48 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
       return defaultData
     }
   }
-  
-  // [WHAT] 移动端优先使用缓存（WebView JSONP 可能受限）
-  // [WHY] Android WebView 可能阻止跨域脚本加载
+
   if (isNativeApp && persisted && persisted.totalUp > 0) {
     cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
     fetchMarketOverviewInBackground(persisted)
     return persisted
   }
-  
-  // [WHAT] 固定的区间分布
-  // [NOTE] 使用 -0.001 作为边界，避免 change=0 被错误分类
+
   const createRanges = (): FundDistribution[] => [
     { range: '≤-5', count: 0, min: -Infinity, max: -5 },
     { range: '-5~-3', count: 0, min: -5, max: -3 },
     { range: '-3~-1', count: 0, min: -3, max: -1 },
-    { range: '-1~0', count: 0, min: -1, max: -0.001 },  // 不包括0
-    { range: '0~1', count: 0, min: -0.001, max: 1 },    // 包括0
+    { range: '-1~0', count: 0, min: -1, max: -0.001 },
+    { range: '0~1', count: 0, min: -0.001, max: 1 },
     { range: '1~3', count: 0, min: 1, max: 3 },
     { range: '3~5', count: 0, min: 3, max: 5 },
     { range: '≥5', count: 0, min: 5, max: Infinity }
   ]
-  
-  // [WHAT] 创建空数据（API 失败时返回）
+
   const createEmptyData = (): MarketOverview => ({
     updateTime: '--',
     totalUp: 0,
     totalDown: 0,
     distribution: createRanges()
   })
-  
-  const ranges = createRanges()
-  
-  return new Promise((resolve) => {
-    const scriptId = `overview_script_${Date.now()}`
-    
-    // [WHAT] 清除旧的 rankData
-    delete (window as any).rankData
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    
-    // [WHAT] 天天基金 API 会设置 window.rankData 变量
-    script.onload = () => {
-      // [WHAT] 等待一小段时间让 rankData 被设置
-      setTimeout(() => {
-        cleanup()
-        
-        try {
-          const rankData = (window as any).rankData
-          
-          let totalUp = 0
-          let totalDown = 0
-          
-          if (rankData?.datas && Array.isArray(rankData.datas)) {
-            rankData.datas.forEach((row: string) => {
-              const cols = row.split(',')
-              // [WHAT] 天天基金 rankhandler 数据格式：
-              // 0:基金代码, 1:基金名称, 2:字母缩写, 3:日期, 4:单位净值, 5:累计净值, 
-              // 6:日涨幅, 7:近1周, 8:近1月, 9:近3月, 10:近6月, 11:近1年...
-              let change = parseFloat(cols[6] ?? '0')
-              
-              // [EDGE] 如果第6列不是有效数字，尝试其他可能的列
-              if (isNaN(change) || cols[6] === '') {
-                change = parseFloat(cols[4] ?? '0') || parseFloat(cols[5] ?? '0') || 0
-              }
-              
-              if (change > 0) totalUp++
-              else if (change < 0) totalDown++
-              
-              // 统计分布
-              for (const r of ranges) {
-                if (change > r.min && change <= r.max) {
-                  r.count++
-                  break
-                }
-              }
-            })
-          }
-          
-          
-          const now = new Date()
-          const result: MarketOverview = {
-            updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-            totalUp,
-            totalDown,
-            distribution: ranges
-          }
-          
-          // [WHAT] 只有获取到有效数据才保存
-          if (totalUp > 0 || totalDown > 0) {
-            cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
-            persistCache.set(cacheKey, result)
-            safeResolve(result)
-          } else {
-            // [EDGE] 数据无效，使用持久化缓存
-            safeResolve(persisted || createEmptyData())
-          }
-        } catch {
-          // [EDGE] 解析失败，使用持久化缓存
-          safeResolve(persisted || createEmptyData())
-        }
-      }, 100)
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      // [EDGE] 请求失败，使用持久化缓存
-      safeResolve(persisted || createEmptyData())
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    // [WHAT] 超时处理 - 无论如何都要 resolve
-    let resolved = false
-    const timeoutId = setTimeout(() => {
-      if (!resolved) {
-        resolved = true
-        cleanup()
-        // [EDGE] 超时时使用持久化缓存
-        resolve(persisted || createEmptyData())
-      }
-    }, 8000)
-    
-    // [WHAT] 包装 resolve 确保只调用一次
-    const safeResolve = (data: MarketOverview) => {
-      if (!resolved) {
-        resolved = true
-        clearTimeout(timeoutId)
-        resolve(data)
-      }
-    }
-    
-    // [WHAT] 获取基金涨跌数据（场外开放式基金）
-    // [NOTE] 使用 jsonpgz 回调，确保数据完整返回
-    script.src = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`
-    document.body.appendChild(script)
-  })
-}
 
-/**
- * [WHAT] 后台静默更新市场概览数据
- * [WHY] 移动端先返回缓存，后台尝试更新
- */
-function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
-  const cacheKey = 'market_overview_v2'
-  
-  const scriptId = `bg_overview_${Date.now()}`
-  delete (window as any).rankData
-  
-  const script = document.createElement('script')
-  script.id = scriptId
-  
-  const cleanup = () => {
-    const s = document.getElementById(scriptId)
-    if (s) document.body.removeChild(s)
-  }
-  
-  // [WHAT] 超时自动清理
-  const timeoutId = setTimeout(() => {
-    cleanup()
-  }, 10000)
-  
-  script.onload = () => {
-    setTimeout(() => {
-      cleanup()
-      clearTimeout(timeoutId)
-      
-      try {
-        const rankData = (window as any).rankData
-        if (!rankData?.datas || !Array.isArray(rankData.datas)) return
-        
-        let totalUp = 0
-        let totalDown = 0
-        const ranges: FundDistribution[] = [
-          { range: '≤-5', count: 0, min: -Infinity, max: -5 },
-          { range: '-5~-3', count: 0, min: -5, max: -3 },
-          { range: '-3~-1', count: 0, min: -3, max: -1 },
-          { range: '-1~0', count: 0, min: -1, max: -0.001 },
-          { range: '0~1', count: 0, min: -0.001, max: 1 },
-          { range: '1~3', count: 0, min: 1, max: 3 },
-          { range: '3~5', count: 0, min: 3, max: 5 },
-          { range: '≥5', count: 0, min: 5, max: Infinity }
-        ]
-        
+  const result = await queueGlobalVarScript<MarketOverview>(
+    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`,
+    () => {
+      const rankData = (window as any).rankData
+      const ranges = createRanges()
+      let totalUp = 0
+      let totalDown = 0
+
+      if (rankData?.datas && Array.isArray(rankData.datas)) {
         rankData.datas.forEach((row: string) => {
           const cols = row.split(',')
           let change = parseFloat(cols[6] ?? '0')
           if (isNaN(change) || cols[6] === '') {
-            change = parseFloat(cols[4] ?? '0') || 0
+            change = parseFloat(cols[4] ?? '0') || parseFloat(cols[5] ?? '0') || 0
           }
-          
           if (change > 0) totalUp++
           else if (change < 0) totalDown++
-          
           for (const r of ranges) {
             if (change > r.min && change <= r.max) {
               r.count++
@@ -1045,32 +729,85 @@ function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
             }
           }
         })
-        
-        // [WHAT] 只有获取到有效数据才更新缓存
-        if (totalUp > 0 || totalDown > 0) {
-          const now = new Date()
-          const result: MarketOverview = {
-            updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-            totalUp,
-            totalDown,
-            distribution: ranges
-          }
-          cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
-          persistCache.set(cacheKey, result)
-        }
-      } catch (err) {
-        console.error('[MarketOverview] 后台更新失败:', err)
       }
-    }, 100)
+
+      if (totalUp > 0 || totalDown > 0) {
+        const now = new Date()
+        return {
+          updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+          totalUp,
+          totalDown,
+          distribution: ranges
+        }
+      }
+      return persisted || createEmptyData()
+    },
+    ['rankData'],
+    persisted || createEmptyData()
+  )
+
+  if (result.totalUp > 0 || result.totalDown > 0) {
+    cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
+    persistCache.set(cacheKey, result)
   }
-  
-  script.onerror = () => {
-    cleanup()
-    clearTimeout(timeoutId)
-  }
-  
-  script.src = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`
-  document.body.appendChild(script)
+  return result
+}
+
+function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
+  const cacheKey = 'market_overview_v2'
+  queueGlobalVarScript<MarketOverview>(
+    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`,
+    () => {
+      const rankData = (window as any).rankData
+      if (!rankData?.datas || !Array.isArray(rankData.datas)) return currentData
+
+      const ranges: FundDistribution[] = [
+        { range: '≤-5', count: 0, min: -Infinity, max: -5 },
+        { range: '-5~-3', count: 0, min: -5, max: -3 },
+        { range: '-3~-1', count: 0, min: -3, max: -1 },
+        { range: '-1~0', count: 0, min: -1, max: -0.001 },
+        { range: '0~1', count: 0, min: -0.001, max: 1 },
+        { range: '1~3', count: 0, min: 1, max: 3 },
+        { range: '3~5', count: 0, min: 3, max: 5 },
+        { range: '≥5', count: 0, min: 5, max: Infinity }
+      ]
+
+      let totalUp = 0
+      let totalDown = 0
+
+      rankData.datas.forEach((row: string) => {
+        const cols = row.split(',')
+        let change = parseFloat(cols[6] ?? '0')
+        if (isNaN(change) || cols[6] === '') {
+          change = parseFloat(cols[4] ?? '0') || 0
+        }
+        if (change > 0) totalUp++
+        else if (change < 0) totalDown++
+        for (const r of ranges) {
+          if (change > r.min && change <= r.max) {
+            r.count++
+            break
+          }
+        }
+      })
+
+      if (totalUp > 0 || totalDown > 0) {
+        const now = new Date()
+        const result: MarketOverview = {
+          updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+          totalUp,
+          totalDown,
+          distribution: ranges
+        }
+        cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
+        persistCache.set(cacheKey, result)
+        return result
+      }
+      return currentData
+    },
+    ['rankData'],
+    currentData
+  ).catch(() => {})
 }
 
 // ========== 场外基金涨幅榜 ==========
@@ -1091,69 +828,30 @@ export async function fetchOTCFundRank(order: 'desc' | 'asc' = 'desc', pageSize 
   const cacheKey = `otc_rank_${order}_${pageSize}`
   const cached = cache.get<OTCFundItem[]>(cacheKey)
   if (cached) return cached
-  
-  return new Promise((resolve) => {
-    const scriptId = `otc_script_${Date.now()}`
-    
-    // [WHAT] 清除旧的 rankData
-    delete (window as any).rankData
-    
-    const script = document.createElement('script')
-    script.id = scriptId
-    
-    script.onload = () => {
-      setTimeout(() => {
-        cleanup()
-        
-        try {
-          const rankData = (window as any).rankData
-          
-          if (!rankData?.datas || !Array.isArray(rankData.datas)) {
-            resolve([])
-            return
-          }
-          
-          const result: OTCFundItem[] = rankData.datas.slice(0, pageSize).map((row: string) => {
-            const cols = row.split(',')
-            return {
-              code: cols[0] ?? '',
-              name: cols[1] ?? '',
-              netValue: parseFloat(cols[4] ?? '0') || 0,
-              dayReturn: parseFloat(cols[6] ?? '0') || 0,
-              updateStatus: '已更新'
-            }
-          })
-          
-          cache.set(cacheKey, result, 60000)
-          resolve(result)
-        } catch {
-          resolve([])
+
+  const st = order === 'desc' ? 'desc' : 'asc'
+  const result = await queueGlobalVarScript<OTCFundItem[]>(
+    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=${st}&pi=1&pn=${pageSize}&dx=1&v=${Date.now()}`,
+    () => {
+      const rankData = (window as any).rankData
+      if (!rankData?.datas || !Array.isArray(rankData.datas)) return []
+      return rankData.datas.slice(0, pageSize).map((row: string) => {
+        const cols = row.split(',')
+        return {
+          code: cols[0] ?? '',
+          name: cols[1] ?? '',
+          netValue: parseFloat(cols[4] ?? '0') || 0,
+          dayReturn: parseFloat(cols[6] ?? '0') || 0,
+          updateStatus: '已更新'
         }
-      }, 100)
-    }
-    
-    script.onerror = () => {
-      cleanup()
-      resolve([])
-    }
-    
-    function cleanup() {
-      const s = document.getElementById(scriptId)
-      if (s) document.body.removeChild(s)
-    }
-    
-    setTimeout(() => {
-      const s = document.getElementById(scriptId)
-      if (s) {
-        cleanup()
-        resolve([])
-      }
-    }, 10000)
-    
-    const st = order === 'desc' ? 'desc' : 'asc'
-    script.src = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=${st}&pi=1&pn=${pageSize}&dx=1&v=${Date.now()}`
-    document.body.appendChild(script)
-  })
+      })
+    },
+    ['rankData'],
+    []
+  )
+
+  cache.set(cacheKey, result, 60000)
+  return result
 }
 
 // ========== 板块及基金 ==========
