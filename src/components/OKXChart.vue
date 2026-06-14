@@ -373,11 +373,6 @@ async function loadData() {
       value: item.netValue
     })).reverse() // 转为正序（旧->新）
     
-    console.log('[OKXChart] 基金数据:', kline.length, '条, 沪深300:', hs300.length, '条')
-    if (kline.length > 0 && hs300.length > 0) {
-      console.log('[OKXChart] 基金首值:', kline[0]?.value, '沪深300首值:', hs300Data.value[0]?.value)
-    }
-    
     await nextTick()
     drawChart()
   } catch (err) {

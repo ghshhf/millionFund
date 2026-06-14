@@ -174,11 +174,9 @@ export async function fetchFundList(): Promise<FundInfo[]> {
       const data = await response.json()
       if (Array.isArray(data) && data.length > 0) {
         fundListCache = data as FundInfo[]
-        console.log(`[Fund API] 加载基金列表成功 (${path}): ${fundListCache.length} 只`)
         return fundListCache
       }
     } catch {
-      console.log(`[Fund API] 路径 ${path} 加载失败，尝试下一个`)
     }
   }
 

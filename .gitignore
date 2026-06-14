@@ -22,6 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+*.code-workspace
+
+# 生成的临时数据文件
+holdings-calculation.json
 
 # Android build files
 android/app/build/

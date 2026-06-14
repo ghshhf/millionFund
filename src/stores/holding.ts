@@ -134,7 +134,6 @@ export const useHoldingStore = defineStore('holding', () => {
     if (cleanedRecords.length > 0) {
       if (needsCleanup) {
         saveHoldings(cleanedRecords)
-        console.log('[数据迁移] 已清理旧字段并保存')
       }
       refreshEstimates()
     }
@@ -183,9 +182,6 @@ export const useHoldingStore = defineStore('holding', () => {
     const holding = holdings.value[index]!
     const currentValue = data.currentValue
 
-    // console.log('更新持仓数据:', { code, currentValue, data })
-
-    // 保存净值到本地存储
     updateFundNetValue(code, currentValue)
 
     // [EDGE] 如果净值无效，跳过计算
@@ -251,20 +247,6 @@ export const useHoldingStore = defineStore('holding', () => {
     if (holding.buyNetValue && holding.buyNetValue > 0 && currentValue > 0) {
       addedGain = ((currentValue - holding.buyNetValue) / currentValue) * 100
     }
-
-    // console.log('更新状态判断:', {
-    //   code,
-    //   isQDII,
-    //   dataSource: data.dataSource,
-    //   navDate: data.navDate,
-    //   nav: data.nav,
-    //   today,
-    //   yesterday,
-    //   hasTodayNav,
-    //   hasYesterdayNavForQDII,
-    //   isUpdated,
-    //   currentValue: data.currentValue
-    // })
 
     holdings.value[index] = {
       ...holding,

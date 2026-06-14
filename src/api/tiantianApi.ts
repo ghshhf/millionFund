@@ -126,7 +126,6 @@ export function initMobileDefaultCache(): void {
   }
   
   persistCache.set(cacheKey, defaultData)
-  console.log('[Cache] 初始化移动端默认市场数据')
 }
 
 /**
@@ -831,7 +830,6 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
   // [WHAT] 非交易时间直接返回持久化缓存（周末/节假日/盘前盘后）
   if (!isTradingTime()) {
     if (persisted && (persisted.totalUp > 0 || persisted.totalDown > 0)) {
-      console.log('[MarketOverview] 非交易时间，使用缓存数据')
       cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
       return persisted
     }
@@ -847,14 +845,10 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
   // [WHAT] 移动端优先使用缓存（WebView JSONP 可能受限）
   // [WHY] Android WebView 可能阻止跨域脚本加载
   if (isNativeApp && persisted && persisted.totalUp > 0) {
-    console.log('[MarketOverview] 移动端使用缓存数据')
     cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
-    // [NOTE] 仍然尝试后台更新，但立即返回缓存
     fetchMarketOverviewInBackground(persisted)
     return persisted
   }
-  
-  console.log('[MarketOverview] 开始获取数据, 原生环境:', isNativeApp)
   
   // [WHAT] 固定的区间分布
   // [NOTE] 使用 -0.001 作为边界，避免 change=0 被错误分类
@@ -1063,7 +1057,6 @@ function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
           }
           cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
           persistCache.set(cacheKey, result)
-          console.log('[MarketOverview] 后台更新成功')
         }
       } catch (err) {
         console.error('[MarketOverview] 后台更新失败:', err)
