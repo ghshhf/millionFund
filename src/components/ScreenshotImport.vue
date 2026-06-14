@@ -95,16 +95,6 @@ async function startRecognition(file: File) {
     
     recognizedHoldings.value = holdings
 
-    // 调试输出：打印识别结果与原始 OCR 数据，方便在控制台粘贴给开发者
-    try {
-      // 在 Web 环境 globalThis.__lastOcrData 存储了完整的 tesseract 返回结构
-      // 打印两次以确保能看到文本与 words 信息
-      console.log('OCR recognizedHoldings:', holdings)
-      console.log('__lastOcrData:', (globalThis as any).__lastOcrData)
-    } catch (e) {
-      // 忽略环境中无法访问 globalThis 情况
-    }
-    
     if (holdings.length === 0) {
       showToast('未识别到持仓信息，请确保截图清晰')
       step.value = 'upload'

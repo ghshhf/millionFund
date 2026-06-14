@@ -282,8 +282,6 @@ async function submitCostAdjust() {
   const marketValue = parseFloat(costFormData.value.amount)
   const profit = parseFloat(costFormData.value.profit)
   
-  console.log('[调整成本] 开始处理', { marketValue, profit })
-  
   if (!marketValue || marketValue <= 0) {
     showToast('请输入有效的持仓市值')
     return
@@ -295,48 +293,28 @@ async function submitCostAdjust() {
   
   const holding = holdingInfo.value
   if (!holding) {
-    console.log('[调整成本] 未找到持仓记录')
     return
   }
   
-  console.log('[调整成本] 当前持仓', holding)
   showLoadingToast('正在获取最新净值...')
   
   try {
-    // 从网络获取最新净值
-    console.log('[调整成本] 开始获取最新净值，基金代码:', holding.code)
     const latestNetValue = await fetchLatestNetValue(holding.code)
-    console.log('[调整成本] 获取到的最新净值:', latestNetValue ? `净值: ${latestNetValue.netValue}, 日期: ${latestNetValue.date}, 涨跌幅: ${latestNetValue.changeRate}%` : 'null')
     
     if (!latestNetValue || latestNetValue.netValue <= 0) {
-      console.log('[调整成本] 获取净值失败', latestNetValue)
       showToast('获取最新净值失败，请稍后重试')
       return
     }
     
     const currentNetValue = latestNetValue.netValue
     
-    // 计算份额
     const newShares = marketValue / currentNetValue
     
-    // 根据持仓市值和持仓收益反推成本净值
-    // 成本市值 = 持仓市值 - 持仓收益
-    // 成本净值 = 成本市值 / 份额 = (持仓市值 - 持仓收益) / (持仓市值 / 当前净值) = 当前净值 - 持仓收益 / 份额
     const costMarketValue = marketValue - profit
     const costNetValue = newShares > 0 ? costMarketValue / newShares : currentNetValue
     
     const addedGain = ((currentNetValue - costNetValue) / currentNetValue) * 100
 
-    console.log('[调整成本] 计算结果:', {
-      用户输入市值: marketValue,
-      用户输入收益: profit,
-      当前净值: currentNetValue,
-      计算份额: newShares.toFixed(2),
-      成本市值: costMarketValue.toFixed(2),
-      成本净值: costNetValue.toFixed(4),
-      累计涨幅: addedGain.toFixed(2) + '%'
-    })
-    
     const record = {
       code: holding.code,
       name: holding.name,
@@ -354,19 +332,10 @@ async function submitCostAdjust() {
       profit: profit
     }
     
-    console.log('[调整成本] 更新持仓记录', {
-      code: record.code,
-      name: record.name,
-      buyNetValue: record.buyNetValue,
-      shares: record.shares,
-      currentValue: record.currentValue,
-      addedGain: record.addedGain.toFixed(2) + '%'
-    })
     holdingStore.addOrUpdateHolding(record)
     showToast('成本调整成功')
     router.back()
   } catch (error) {
-    console.error('[调整成本] 成本调整失败:', error)
     showToast('成本调整失败')
   } finally {
     closeToast()

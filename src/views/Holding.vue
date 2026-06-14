@@ -290,7 +290,6 @@ async function submitForm() {
   }
   
   await holdingStore.addOrUpdateHolding(record)
-  console.log('[添加基金] 最新净值:', record.buyNetValue, '持有份额:', record.shares)
   showToast(isEditing.value ? '修改成功' : '添加成功')
   showAddDialog.value = false
   resetForm()
@@ -588,8 +587,6 @@ async function batchImport() {
       return item.code && item.amount && !isNaN(parseFloat(item.amount)) ? index : -1
     }).filter(index => index !== -1)
     
-    console.log('有效录入项索引:', validIndices)
-    
     const results = []
     
     for (const index of validIndices) {
@@ -599,27 +596,21 @@ async function batchImport() {
       batchItems.value[index]!.error = ''
       
       try {
-        console.log('开始处理基金:', item.code)
-        
         if (holdingStore.hasHolding(item.code)) {
           batchItems.value[index]!.error = '该基金已存在，无需重复添加'
-          console.log('基金已存在:', item.code)
           results.push(null)
           continue
         }
         
         const searchResults = await searchFund(item.code, 1)
-        console.log('搜索结果:', searchResults)
         if (searchResults.length === 0) {
           batchItems.value[index]!.error = '基金不存在'
-          console.log('基金不存在:', item.code)
           results.push(null)
           continue
         }
         
         const fund = searchResults[0]!
         batchItems.value[index]!.name = fund.name
-        console.log('找到基金:', fund.name)
         
         let netValue = 1
         try {
@@ -656,10 +647,7 @@ async function batchImport() {
           createdAt: Date.now()
         }
         
-        console.log('构建记录:', record)
         await holdingStore.addOrUpdateHolding(record)
-        console.log('[批量导入] 最新净值:', netValue, '持有份额:', shares)
-        console.log('添加成功:', fund.code)
         results.push(fund.code)
       } catch (error) {
         batchItems.value[index]!.error = '导入失败'

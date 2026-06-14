@@ -559,8 +559,6 @@ export async function fetchHS300History(days = 90): Promise<NetValueRecord[]> {
           return
         }
 
-        console.log('[fetchHS300History] 成功加载', trend.length, '条数据, 首值:', trend[0]?.y, '末值:', trend[trend.length - 1]?.y)
-
         const recentData = trend.slice(-days)
 
         const records: NetValueRecord[] = recentData.map((item: any) => {
@@ -767,14 +765,6 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
     fetchNetValueHistoryFast(code, 2).catch(() => ({ records: [], fundName: '' }))  // 只获取最近 2 天的净值
   ])
 
-  // [DEBUG] 打印获取到的数据
-  // console.log('基金数据:', {
-  //   code,
-  //   isQDII,
-  //   estimateData,
-  //   historyResult
-  // })
-
   const now = new Date()
   const today = now.toISOString().split('T')[0]!
   const currentHour = now.getHours()
@@ -821,17 +811,6 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
 
   const isNavFromToday = navData?.date === today
   const isEstimateFromToday = estimateData?.gztime?.startsWith(today.replace(/-/g, '-'))
-
-  // console.log('日期判断:', {
-  //   code,
-  //   today,
-  //   navDate: navData?.date,
-  //   isNavFromToday,
-  //   nav: result.nav,
-  //   navChange: result.navChange,
-  //   estimate: result.estimate,
-  //   estimateChange: result.estimateChange
-  // })
 
   // [WHAT] QDII 基金特殊处理
   if (isQDII) {

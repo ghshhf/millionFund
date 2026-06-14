@@ -23,9 +23,6 @@ export function checkVersionAndClearCache(): void {
   const storedVersion = localStorage.getItem(STORAGE_KEYS.APP_VERSION)
 
   if (storedVersion !== APP_VERSION) {
-    console.log(`[版本更新] ${storedVersion || '首次安装'} -> ${APP_VERSION}，清除缓存`)
-
-    // [WHAT] 清除内存缓存
     cache.clear()
 
     // [WHAT] 清除 localStorage 中的 API 缓存（保留用户数据）
@@ -201,7 +198,6 @@ export function updateFundNetValue(code: string, netValue: number): void {
   const netValues = getFundNetValues()
   netValues[code] = netValue
   saveFundNetValues(netValues)
-  // console.log('保存基金净值到本地存储:', { code, netValue, netValues })
 }
 
 /**
