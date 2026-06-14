@@ -518,8 +518,8 @@ async function refreshData() {
 async function loadIndices() {
   try {
     indices.value = await fetchMarketIndicesFast()
-  } catch {
-    // 静默失败
+  } catch (err) {
+    console.error('获取大盘指数失败:', err)
   }
 }
 
@@ -527,8 +527,8 @@ async function loadIndices() {
 async function loadGlobalIndices() {
   try {
     globalIndices.value = await fetchGlobalIndices()
-  } catch {
-    // 静默失败
+  } catch (err) {
+    console.error('获取全球指数失败:', err)
   }
 }
 
@@ -537,8 +537,8 @@ async function loadNews() {
   newsLoading.value = true
   try {
     newsList.value = await fetchFinanceNews(6)
-  } catch {
-    // 静默失败
+  } catch (err) {
+    console.error('获取资讯失败:', err)
   } finally {
     newsLoading.value = false
   }

@@ -48,7 +48,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/lee727n/millionFund
+git clone https://github.com/ghshhf/millionFund
 cd millionFund
 
 # 安装依赖

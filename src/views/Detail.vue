@@ -228,8 +228,8 @@ async function loadTrendPrediction() {
         fundScore.value = calculateFundScore(returnAnalysis.value)
       }
     }
-  } catch {
-    // 静默失败
+  } catch (err) {
+    console.error('获取趋势预测失败:', err)
   } finally {
     isTrendLoading.value = false
   }

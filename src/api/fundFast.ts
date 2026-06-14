@@ -69,8 +69,8 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>
 }
 
-let pendingRequests: PendingRequest[] = []
-let pendingNetValueRequests: {
+const pendingRequests: PendingRequest[] = []
+const pendingNetValueRequests: {
   code: string
   resolve: (data: { netValue: number; date: string; changeRate: number } | null) => void
   reject: (error: Error) => void
@@ -204,8 +204,8 @@ export async function fetchFundEstimatesBatch(codes: string[]): Promise<Map<stri
     try {
       const data = await fetchFundEstimateFast(code)
       results.set(code, data)
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.error('批量获取估值失败:', code, err)
     }
   })
 
@@ -932,8 +932,8 @@ export async function fetchFundAccurateBatch(codes: string[]): Promise<Map<strin
     try {
       const data = await fetchFundAccurateData(code)
       results.set(code, data)
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.error('批量获取准确数据失败:', code, err)
     }
   }))
 

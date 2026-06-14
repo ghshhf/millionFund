@@ -151,8 +151,8 @@ export const useFundStore = defineStore('fund', () => {
     try {
       const data = await fetchFundEstimateFast(code)
       updateFundData(code, data)
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.error('刷新基金估值失败:', code, err)
     }
   }
 
