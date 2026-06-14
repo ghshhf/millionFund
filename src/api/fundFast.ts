@@ -5,6 +5,7 @@
 import { cache, CACHE_TTL } from './cache'
 import { isTradingTime, persistCache } from './tiantianApi'
 import type { FundEstimate, NetValueRecord } from '@/types/fund'
+import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
@@ -76,46 +77,40 @@ const pendingNetValueRequests: {
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }[] = []
-let jsonpInitialized = false
 
-function initJsonpCallback() {
-  if (jsonpInitialized) return
-  jsonpInitialized = true
+registerJsonpHandler((data: any) => {
+  // [WHY] 防御性检查：data 或 fundcode 可能为 undefined
+  // [EDGE] 某些基金类型（ETF联接、期货）不支持估值，会返回 undefined
+  if (!data || !data.fundcode) {
+    return  // 静默忽略，不输出警告
+  }
+  const index = pendingRequests.findIndex(req => req.code === data.fundcode)
+  if (index !== -1) {
+    const req = pendingRequests[index]!
+    clearTimeout(req.timeout)
+    pendingRequests.splice(index, 1)
+    req.resolve(data)
+    return
+  }
 
-    ; (window as any).jsonpgz = (data: any) => {
-      // [WHY] 防御性检查：data 或 fundcode 可能为 undefined
-      // [EDGE] 某些基金类型（ETF联接、期货）不支持估值，会返回 undefined
-      if (!data || !data.fundcode) {
-        return  // 静默忽略，不输出警告
-      }
-      const index = pendingRequests.findIndex(req => req.code === data.fundcode)
-      if (index !== -1) {
-        const req = pendingRequests[index]!
-        clearTimeout(req.timeout)
-        pendingRequests.splice(index, 1)
-        req.resolve(data)
-        return
-      }
+  // [WHAT] 处理净值请求
+  const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
+  if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
+    const req = pendingNetValueRequests[navIndex]!
+    clearTimeout(req.timeout)
+    pendingNetValueRequests.splice(navIndex, 1)
 
-      // [WHAT] 处理净值请求
-      const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
-      if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
-        const req = pendingNetValueRequests[navIndex]!
-        clearTimeout(req.timeout)
-        pendingNetValueRequests.splice(navIndex, 1)
-
-        // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
-        // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
-        const result = {
-          netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
-          date: data.jzrq || '',
-          changeRate: parseFloat(data.gszzl || '0') || 0
-        }
-        req.resolve(result)
-      }
-      // [NOTE] 未匹配的响应静默忽略，可能是重复响应或超时后的响应
+    // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
+    // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
+    const result = {
+      netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
+      date: data.jzrq || '',
+      changeRate: parseFloat(data.gszzl || '0') || 0
     }
-}
+    req.resolve(result)
+  }
+  // [NOTE] 未匹配的响应静默忽略，可能是重复响应或超时后的响应
+})
 
 // ========== 实时估值API（优化版） ==========
 
