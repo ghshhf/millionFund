@@ -2,13 +2,14 @@
 // [WHY] 首页 - 展示自选基金列表、市场概览和快捷入口
 // [WHAT] 支持下拉刷新、左滑删除、点击跳转搜索添加、设置提醒
 
-import { ref, onMounted, watch, computed, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted, nextTick, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
 import { useHoldingStore } from '@/stores/holding'
+import { useNetworkStore } from '@/stores/network'
 import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock, fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
 import { getTradingSession, type TradingSession } from '@/api/tiantianApi'
-import { showConfirmDialog, showToast } from 'vant'
+import { showConfirmDialog, showToast, showActionSheet } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import FundCard from '@/components/FundCard.vue'
 import FundGridItem from '@/components/FundGridItem.vue'
@@ -18,6 +19,7 @@ import downW from '@/assets/downW.jpg'
 const router = useRouter()
 const fundStore = useFundStore()
 const holdingStore = useHoldingStore()
+const networkStore = useNetworkStore()
 
 const topHoldingsModal = ref<{ open: boolean; fund: any; stocks: HoldingStock[]; loading: boolean }>({
   open: false,
@@ -160,17 +162,35 @@ async function openIntradayModal(fund: any, event: Event) {
 
 function closeIntradayModal() {
   intradayModal.value.open = false
+  stopIntradayRetry()
 }
 
+// [WHAT] 保存递归定时器ID，用于组件卸载时清理
+let intradayRetryTimer: number | undefined
+
 // [WHY] 弹窗打开且数据就绪后绘制图表，需要多次尝试确保canvas已渲染
+// [EDGE] 组件卸载或弹窗关闭时必须清除递归定时器，防止访问已卸载的 ref
 function tryDrawIntradayChart(attempts = 0) {
+  // 每次重试前清理上一次的 timer
+  if (intradayRetryTimer) {
+    clearTimeout(intradayRetryTimer)
+    intradayRetryTimer = undefined
+  }
   if (!intradayCanvasRef.value || !intradayModal.value.data.length) {
     if (attempts < 10) {
-      setTimeout(() => tryDrawIntradayChart(attempts + 1), 50)
+      intradayRetryTimer = window.setTimeout(() => tryDrawIntradayChart(attempts + 1), 50)
     }
     return
   }
   drawIntradayChartOnCanvas(intradayCanvasRef.value, intradayModal.value.data)
+}
+
+// [WHAT] 停止分时图的递归重试（弹窗关闭 / 组件卸载时调用）
+function stopIntradayRetry(): void {
+  if (intradayRetryTimer) {
+    clearTimeout(intradayRetryTimer)
+    intradayRetryTimer = undefined
+  }
 }
 
 // 监听弹窗打开，数据准备好后绘制图表
@@ -193,6 +213,20 @@ const autoRefreshEnabled = ref(true)
 let autoRefreshInterval: number | undefined
 // 交易状态更新定时器
 let tradingSessionInterval: number | undefined
+// [WHY] 数据刷新中状态 - 用于显示加载指示
+const isRefreshing = ref(false)
+// [WHY] 子组件错误捕获 - 防止某只基金数据异常导致整个页面白屏
+const hasError = ref(false)
+const errorMessage = ref('')
+
+// [WHAT] 捕获所有子组件的渲染/运行时错误
+onErrorCaptured((err, instance, info) => {
+  console.error('[Home.vue] 组件错误:', err, info)
+  hasError.value = true
+  errorMessage.value = err instanceof Error ? err.message : String(err)
+  // 返回 false 让错误继续冒泡到上层
+  return false
+})
 
 // 监听自动刷新状态变化
 watch(autoRefreshEnabled, (newValue) => {
@@ -224,8 +258,12 @@ const isWeekend = computed(() => {
   return day === 0 || day === 6
 })
 
-// [WHAT] 交易状态文本和样式
+// [WHAT] 交易状态文本和样式（使用增强版的 getTradingSession）
 const tradingStatus = computed(() => {
+  // [WHY] 数据刷新中时显示转动的 loading 图标
+  if (isRefreshing.value) {
+    return { text: '刷新中...', subText: '正在获取最新数据', class: 'refreshing', icon: 'replay' }
+  }
   const session = tradingSession.value
   const now = currentTime.value
   const hour = now.getHours()
@@ -240,6 +278,14 @@ const tradingStatus = computed(() => {
       return { text: '午休中', subText: `13:00 开盘`, class: 'break', icon: 'pause' }
     case 'afternoon':
       return { text: '交易中', subText: `下午盘 ${timeStr}`, class: 'trading', icon: 'live' }
+    case 'pre_market':
+      return { text: '等待开盘', subText: `09:30 开盘 ${timeStr}`, class: 'pre-market', icon: 'clock' }
+    case 'post_market':
+      return { text: '已收盘', subText: `下次 09:30 开盘`, class: 'closed', icon: 'clock' }
+    case 'weekend':
+      return { text: '周末休市', subText: '下周一会开盘', class: 'closed', icon: 'calendar-o' }
+    case 'holiday':
+      return { text: '节假日休市', subText: '节后恢复交易', class: 'closed', icon: 'calendar-o' }
     default:
       return { text: '已收盘', subText: '09:30 开盘', class: 'closed', icon: 'clock' }
   }
@@ -447,6 +493,16 @@ function resetSort() {
   sortDirection.value = 'none'
 }
 
+// [WHY] 网络从离线恢复在线后，自动刷新首页数据
+watch(
+  () => networkStore.justRecovered,
+  (recovered) => {
+    if (recovered) {
+    refreshData()
+    }
+  }
+)
+
 // [WHAT] 页面挂载时初始化数据
 onMounted(async () => {
   fundStore.initWatchlist()
@@ -474,6 +530,8 @@ onUnmounted(() => {
   if (tradingSessionInterval) {
     clearInterval(tradingSessionInterval)
   }
+  // 清除分时图递归重试定时器
+  stopIntradayRetry()
 })
 
 // [WHAT] 更新交易状态
@@ -483,21 +541,21 @@ function updateTradingSession() {
   currentTime.value = new Date()
 }
 
-// [WHAT] 刷新数据
+// [WHAT] 刷新数据（统一的刷新入口）
 async function refreshData() {
+  if (isRefreshing.value) return
+  isRefreshing.value = true
   try {
-    // 刷新全球主要指数
     await Promise.all([
       loadIndices(),
-      loadGlobalIndices()
+      loadGlobalIndices(),
+      holdingStore.refreshEstimates()
     ])
-    
-    // 刷新持仓趋势中的基金数据
-    await holdingStore.refreshEstimates()
-    
     showToast('刷新成功')
   } catch {
     showToast('刷新失败，请重试')
+  } finally {
+    isRefreshing.value = false
   }
 }
 
@@ -533,14 +591,61 @@ async function handleDelete(code: string) {
   }
 }
 
+// [WHY] 长按基金卡片弹出快捷操作菜单
+// [WHAT] 查看详情 / 加入持仓 / 删除自选
+async function onFundLongPress(code: string, fundName: string) {
+  try {
+    const actions = [
+      { name: '查看详情', key: 'detail' },
+      { name: '加入持仓', key: 'holding' },
+      { name: '删除自选', key: 'delete' }
+    ]
+    const result = await showActionSheet({
+      title: `${fundName || '基金'} · 快捷操作`,
+      actions: actions.map(a => ({ name: a.name }))
+    })
+    const selected = (result as { index: number }).index
+    if (selected === 0) {
+      router.push(`/detail/${code}`)
+    } else if (selected === 1) {
+      const existing = holdingStore.holdings.find(h => h.code === code)
+      if (existing) {
+        showToast('持仓中已存在该基金')
+      } else {
+        holdingStore.addOrUpdateHolding({
+          code: code,
+          name: fundName,
+          buyNetValue: 0,
+          shares: 0,
+          buyDate: '',
+          holdingDays: 0,
+          source: '手动',
+          isQDII: false,
+          createdAt: Date.now()
+        })
+        showToast('已加入持仓，请补充买入信息')
+      }
+    } else if (selected === 2) {
+      handleDelete(code)
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
 // [WHAT] 下拉刷新处理
 async function onRefresh() {
-  await Promise.all([
-    fundStore.refreshEstimates(),
-    loadIndices(),
-    loadGlobalIndices()
-  ])
-  showToast('刷新成功')
+  isRefreshing.value = true
+  try {
+    await Promise.all([
+      fundStore.refreshEstimates(),
+      loadIndices(),
+      loadGlobalIndices()
+    ])
+    showToast('刷新成功')
+  } finally {
+    isRefreshing.value = false
+  }
 }
 
 // [WHAT] 跳转到搜索页
@@ -636,6 +741,15 @@ function goToDetail(code: string) {
       class="fund-list-container"
     >
 
+      <!-- [WHY] 渲染错误的降级显示：给用户刷新的机会而不是白屏 -->
+      <div v-if="hasError" class="error-fallback">
+        <div class="error-icon">⚠️</div>
+        <div class="error-title">页面加载出现问题</div>
+        <div class="error-detail">{{ errorMessage || '部分数据暂时无法加载' }}</div>
+        <van-button round type="primary" @click="() => { hasError.value = false; refreshData(); }">
+          点击重试
+        </van-button>
+      </div>
       
       <!-- 持仓趋势 -->
       <div class="market-overview" v-if="holdingStore.holdings.length > 0">
@@ -923,20 +1037,30 @@ function goToDetail(code: string) {
           :fund="fund"
           @delete="handleDelete"
           @click="goToDetail"
+          @longpress="onFundLongPress"
         />
       </template>
 
-      <!-- 空状态 - 移动端和网页端都隐藏 -->
-      <van-empty
-        v-if="fundStore.watchlist.length === 0"
-        image="search"
-        description="暂无自选基金"
-        class="hidden"
-      >
-        <van-button round type="primary" @click="goToSearch">
-          添加基金
-        </van-button>
-      </van-empty>
+      <!-- 首次启动 / 空状态引导卡片 -->
+      <div v-if="fundStore.watchlist.length === 0" class="onboarding-card">
+        <div class="onboarding-icon">📈</div>
+        <div class="onboarding-title">欢迎使用基金管理</div>
+        <div class="onboarding-desc">
+          在这里管理你的自选和持仓基金<br />
+          实时掌握涨跌情况和投资收益
+        </div>
+        <div class="onboarding-actions">
+          <van-button round block type="primary" @click="goToSearch">
+            🔍 添加自选基金
+          </van-button>
+          <van-button round block plain @click="router.push('/holding')">
+            💰 添加持仓记录
+          </van-button>
+        </div>
+        <div class="onboarding-tips">
+          <div>💡 小提示：在持仓页长按基金可快速操作</div>
+        </div>
+      </div>
       
       <!-- 底部占位 -->
       <div class="bottom-spacer"></div>
@@ -1035,6 +1159,87 @@ function goToDetail(code: string) {
 <style scoped>
 .hidden {
   display: none !important;
+}
+
+/* ========== 首次启动引导卡片 ========== */
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  background: linear-gradient(160deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+}
+
+.onboarding-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: bounceIn 0.8s ease;
+}
+
+@keyframes bounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.onboarding-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.onboarding-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.onboarding-actions {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-tips {
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ========== 错误降级显示 ========== */
+.error-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.error-detail {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+  max-width: 300px;
+  word-break: break-all;
 }
 
 .home-page {
@@ -1547,6 +1752,22 @@ function goToDetail(code: string) {
 .trading-status.closed .status-text {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
+}
+
+/* [WHY] 刷新中的状态：蓝色标签 + 旋转图标 */
+.trading-status.refreshing .status-text {
+  background: rgba(64, 158, 255, 0.15);
+  color: #409eff;
+}
+
+.trading-status.refreshing .status-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .status-time {

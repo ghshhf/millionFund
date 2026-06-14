@@ -40,8 +40,10 @@ window.onunhandledrejection = (event) => {
 app.mount('#app')
 
 // [WHAT] 检查版本并清除旧缓存
-import { checkVersionAndClearCache } from './utils/storage'
+import { checkVersionAndClearCache, checkSchemaAndMigrate } from './utils/storage'
 checkVersionAndClearCache()
+// [WHY] 数据 schema 迁移：老用户升级后需要补全新字段，否则会读取到 undefined
+checkSchemaAndMigrate()
 
 // [WHAT] 初始化主题
 import { useThemeStore } from './stores/theme'

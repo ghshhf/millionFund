@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { getAITrackingRecords, saveAITrackingRecords } from '@/utils/storage'
 
 export interface AITrackingRecord {
   id: string
@@ -60,19 +61,11 @@ export const useAITrackingStore = defineStore('aiTracking', () => {
   }
 
   function saveToLocalStorage() {
-    localStorage.setItem('ai-tracking-records', JSON.stringify(records.value))
+    saveAITrackingRecords(records.value)
   }
 
   function loadFromLocalStorage() {
-    const data = localStorage.getItem('ai-tracking-records')
-    if (data) {
-      try {
-        records.value = JSON.parse(data)
-      } catch (e) {
-        console.error('Failed to load AI tracking records:', e)
-        records.value = []
-      }
-    }
+    records.value = getAITrackingRecords<AITrackingRecord>()
   }
 
   function importRecords(importedRecords: AITrackingRecord[]) {
