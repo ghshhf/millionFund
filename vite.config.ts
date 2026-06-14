@@ -39,7 +39,9 @@ function stripConsoleLog(): Plugin {
 
 // [WHY] 配置 Vite 构建工具，支持 Vue3 和 Vant 组件自动导入
 // [WHAT] 使用 unplugin-vue-components 自动导入 Vant 组件，无需手动 import
+// [WHY] 全平台打包（Electron + Capacitor）需要相对路径，file:// 协议下绝对路径会失效
 export default defineConfig({
+  base: './',
   plugins: [
     vue(),
     // [HOW] VantResolver 会自动识别 Vant 组件并导入对应的样式
@@ -60,7 +62,7 @@ export default defineConfig({
   },
   // [WHY] 仅移除 debugger 语句，不碰 console
   esbuild: {
-    drop: ['debugger']
+    drop: ['debugger'],
   },
   server: {
     host: '0.0.0.0',
