@@ -3,7 +3,7 @@
 // [DEPS] 天天基金公开接口
 
 import { cache, CACHE_TTL } from './cache'
-import { isTradingTime, persistCache } from './tiantianApi'
+import { persistCache } from './tiantianApi'
 import type { FundEstimate, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 
