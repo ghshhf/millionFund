@@ -9,6 +9,7 @@ import { useHoldingStore } from '@/stores/holding'
 import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock, fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
 import { fetchFinanceNews, type NewsItem, getTradingSession, type TradingSession } from '@/api/tiantianApi'
 import { showConfirmDialog, showToast } from 'vant'
+import { getSourceLabel } from '@/config/sources'
 import FundCard from '@/components/FundCard.vue'
 import FundGridItem from '@/components/FundGridItem.vue'
 import riseW from '@/assets/riseW.jpg'
@@ -74,8 +75,8 @@ function drawIntradayChartOnCanvas(canvas: HTMLCanvasElement, data: IntradayPoin
   const values = data.map(d => d.value)
   const minVal = Math.min(...values)
   const maxVal = Math.max(...values)
-  const startVal = data[0].value
-  const endVal = data[data.length - 1].value
+  const startVal = data[0]!.value
+  const endVal = data[data.length - 1]!.value
   const color = endVal >= startVal ? '#ff4d4f' : '#52c41a'
 
   // 清空画布
@@ -107,7 +108,7 @@ function drawIntradayChartOnCanvas(canvas: HTMLCanvasElement, data: IntradayPoin
   const timeStep = Math.ceil(data.length / 5)
   for (let i = 0; i < data.length; i += timeStep) {
     const x = padding.left + (i / (data.length - 1)) * chartWidth
-    ctx.fillText(data[i].time, x, height - 5)
+    ctx.fillText(data[i]!.time, x, height - 5)
   }
 
   // 绘制折线
@@ -437,8 +438,7 @@ function filterBySource(source: string) {
     showToast('已取消来源筛选')
   } else {
     currentSourceFilter.value = source
-    const sourceName = source === 'ali' ? '支付宝' : source === 'TX' ? '腾讯' : source === 'JD' ? '京东' : source
-    showToast(`已筛选 ${sourceName} 来源的基金`)
+    showToast(`已筛选 ${getSourceLabel(source)} 来源的基金`)
   }
 }
 
@@ -543,23 +543,6 @@ async function loadNews() {
     newsLoading.value = false
   }
 }
-
-// [WHAT] 监听数据变化，检查提醒条件
-watch(
-  () => fundStore.watchlist,
-  (watchlist) => {
-    for (const fund of watchlist) {
-      if (fund.estimateValue && fund.estimateChange) {
-        const value = parseFloat(fund.estimateValue)
-        const change = parseFloat(fund.estimateChange)
-        if (!isNaN(value) && !isNaN(change)) {
-          // 提醒功能已移除
-        }
-      }
-    }
-  },
-  { deep: true }
-)
 
 // [WHAT] 下拉刷新处理
 async function onRefresh() {
@@ -1191,11 +1174,11 @@ function goToDetail(code: string) {
         <div class="intraday-popup-chart" v-if="!intradayModal.loading">
           <div v-if="intradayModal.data && intradayModal.data.length > 0" class="intraday-popup-chart-wrapper">
             <div class="intraday-popup-summary">
-              <span class="intraday-popup-latest" :class="intradayModal.data[intradayModal.data.length - 1].growth >= 0 ? 'up' : 'down'">
-                {{ intradayModal.data[intradayModal.data.length - 1].value }}
-                ({{ intradayModal.data[intradayModal.data.length - 1].growth >= 0 ? '+' : '' }}{{ intradayModal.data[intradayModal.data.length - 1].growth }}%)
+              <span class="intraday-popup-latest" :class="intradayModal.data[intradayModal.data.length - 1]!.growth >= 0 ? 'up' : 'down'">
+                {{ intradayModal.data[intradayModal.data.length - 1]!.value }}
+                ({{ intradayModal.data[intradayModal.data.length - 1]!.growth >= 0 ? '+' : '' }}{{ intradayModal.data[intradayModal.data.length - 1]!.growth }}%)
               </span>
-              <span class="intraday-popup-time">{{ intradayModal.data[intradayModal.data.length - 1].time }}</span>
+              <span class="intraday-popup-time">{{ intradayModal.data[intradayModal.data.length - 1]!.time }}</span>
             </div>
             <canvas ref="intradayCanvasRef" class="intraday-popup-canvas"></canvas>
           </div>

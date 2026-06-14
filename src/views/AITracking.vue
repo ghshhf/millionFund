@@ -234,7 +234,7 @@ const touchDragElement = ref<HTMLElement | null>(null)
 function handleTouchStart(event: TouchEvent, index: number) {
   if (uiMode.value !== 'simple') return
   
-  const touch = event.touches[0]
+  const touch = event.touches[0]!
   touchStartY.value = touch.clientY
   touchCurrentY.value = touch.clientY
   draggingIndex.value = index
@@ -253,7 +253,7 @@ function handleTouchMove(event: TouchEvent) {
   
   event.preventDefault()
   
-  const touch = event.touches[0]
+  const touch = event.touches[0]!
   touchCurrentY.value = touch.clientY
   
   // 计算移动距离，找到目标位置
@@ -355,7 +355,7 @@ async function confirmAddRecord() {
     let buyNav = 0
     let sellNavEstimated = false
     let buyNavEstimated = false
-    const targetDate = newRecord.value.date || new Date().toISOString().split('T')[0]
+    const targetDate = newRecord.value.date || new Date().toISOString().split('T')[0]!
 
     if (newRecord.value.date) {
       const historyDays = Math.ceil((new Date().getTime() - new Date(newRecord.value.date).getTime()) / (1000 * 60 * 60 * 24)) + 10
