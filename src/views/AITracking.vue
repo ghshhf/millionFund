@@ -84,7 +84,7 @@
           <div class="record-header">
             <span class="record-date">{{ formatDate(record.date) }}</span>
             <span class="record-status" :class="getStatusClass(record)">{{ getStatusText(record) }}</span>
-            <span class="record-calc" v-html="getCalcProcessCombined(record)"></span>
+            <span class="record-calc">{{ getCalcProcessCombined(record) }}</span>
           </div>
           <div class="record-content">
             <div class="fund-item sell">
@@ -591,11 +591,12 @@ function getCalcProcessCombined(record: AITrackingRecord) {
   
   const sellChange = ((sellPrice - sellNav) / sellNav) * 100
   const buyChange = ((buyPrice - buyNav) / buyNav) * 100
+  const sellChangeStr = `${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}%`
+  const buyChangeStr = `${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
+  const sellEstimated = record.sellNavEstimated ? '(估值)' : ''
+  const buyEstimated = record.buyNavEstimated ? '(估值)' : ''
   
-  const sellNavTag = record.sellNavEstimated ? ' <span style="color:#ff976a">(估值)</span>' : ''
-  const buyNavTag = record.buyNavEstimated ? ' <span style="color:#ff976a">(估值)</span>' : ''
-  
-  return `卖出: ${sellPrice.toFixed(4)} - <span style="color:#1989fa">${sellNav.toFixed(4)}</span>${sellNavTag} = ${sellChange >= 0 ? '+' : ''}${sellChange.toFixed(2)}% 买入: ${buyPrice.toFixed(4)} - <span style="color:#1989fa">${buyNav.toFixed(4)}</span>${buyNavTag} = ${buyChange >= 0 ? '+' : ''}${buyChange.toFixed(2)}%`
+  return `卖出: ${sellPrice.toFixed(4)} - ${sellNav.toFixed(4)}${sellEstimated} = ${sellChangeStr} 买入: ${buyPrice.toFixed(4)} - ${buyNav.toFixed(4)}${buyEstimated} = ${buyChangeStr}`
 }
 
 function getStatusText(record: AITrackingRecord): string {
