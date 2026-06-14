@@ -160,7 +160,7 @@ async function loadFundData() {
         dataSource: accurateData.dataSource
       }
     } else {
-      const { searchFund } = await import('@/api/fund')
+      const { searchFund } = await import('@/api/fundFast')
       const funds = await searchFund(fundCode.value, 1)
       if (funds.length > 0) {
         fundInfo.value = {

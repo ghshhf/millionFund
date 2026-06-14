@@ -5,7 +5,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
-import { searchFund } from '@/api/fund'
+import { searchFund } from '@/api/fundFast'
 import { fetchFundEstimateFast } from '@/api/fundFast'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import type { FundInfo } from '@/types/fund'
