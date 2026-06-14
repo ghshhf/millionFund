@@ -23,6 +23,10 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString())
   },
+  // [WHY] 生产环境移除 console 日志，提升性能并避免信息泄露
+  esbuild: {
+    drop: ['console', 'debugger']
+  },
   server: {
     host: '0.0.0.0',
     port: 5173

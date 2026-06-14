@@ -30,7 +30,7 @@ interface PendingRequest {
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }
-let pendingRequests: PendingRequest[] = []
+const pendingRequests: PendingRequest[] = []
 
 // [WHAT] 净值请求队列
 interface PendingNetValueRequest {
@@ -39,7 +39,7 @@ interface PendingNetValueRequest {
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }
-let pendingNetValueRequests: PendingNetValueRequest[] = []
+const pendingNetValueRequests: PendingNetValueRequest[] = []
 // [WHAT] 初始化全局 jsonpgz 回调函数
 export function initJsonpCallback() {
   if (!(window as any).jsonpgz) {
@@ -360,7 +360,7 @@ export async function searchFund(
   const mappedKeywords = sectorKeywords[kw]
 
   // [WHAT] 先尝试完整匹配
-  let results = list.filter(
+  const results = list.filter(
     (item) =>
       item.code.includes(kw) ||
       item.name.toLowerCase().includes(kw) ||

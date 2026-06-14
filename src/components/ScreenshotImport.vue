@@ -4,11 +4,12 @@
 // [DEPS] 依赖 ocr.ts 进行文字识别
 
 import { ref, computed } from 'vue'
-import { showToast, showLoadingToast, closeToast } from 'vant'
+import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
 import { recognizeHoldings, type RecognizedHolding } from '@/utils/ocr'
 import { searchFund, fetchFundEstimate, fetchFundList } from '@/api/fund'
 import { fetchLatestNetValue } from '@/api/fundFast'
 import { useHoldingStore } from '@/stores/holding'
+import { requestPermissions } from '@/utils/permissions'
 import type { HoldingRecord, FundInfo } from '@/types/fund'
 
 const props = defineProps<{
@@ -49,7 +50,22 @@ async function handleFileChange(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
-  
+
+  // [WHY] Android 6.0+ 需要运行时权限
+  try {
+    const status = await requestPermissions()
+    if (!status.allGranted) {
+      showDialog({
+        title: '权限不足',
+        message: '需要相机和存储权限才能使用截图导入功能，请在系统设置中授予权限',
+        confirmButtonText: '知道了',
+      })
+      return
+    }
+  } catch (e) {
+    // 非原生环境（Web 调试）忽略权限请求
+  }
+
   // [WHAT] 验证文件类型
   if (!file.type.startsWith('image/')) {
     showToast('请选择图片文件')

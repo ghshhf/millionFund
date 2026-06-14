@@ -158,7 +158,7 @@ const filteredData = computed(() => {
   const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
   
   // [WHY] 先按时间排序，再过滤指定天数范围
-  let rawData = [...chartData.value]
+  const rawData = [...chartData.value]
   
   // [WHAT] 调试信息：使用 error 级别确保输出到 logcat
   const debugInfo = {

@@ -1065,8 +1065,8 @@ function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
           persistCache.set(cacheKey, result)
           console.log('[MarketOverview] 后台更新成功')
         }
-      } catch {
-        // 静默失败
+      } catch (err) {
+        console.error('[MarketOverview] 后台更新失败:', err)
       }
     }, 100)
   }
