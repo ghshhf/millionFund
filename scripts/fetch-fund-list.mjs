@@ -31,7 +31,7 @@ https.get(url, (res) => {
                 pinyin: item[4] || ''
             }))
 
-            fs.writeFileSync('./fund-list.json', JSON.stringify(fundList, null, 2))
+            fs.writeFileSync('./public/fund-list.json', JSON.stringify(fundList, null, 2))
             console.log(`成功获取 ${fundList.length} 只基金`)
         } catch (error) {
             console.error('解析失败:', error)
