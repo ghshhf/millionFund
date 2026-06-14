@@ -3,6 +3,7 @@
 // [DEPS] 依赖天天基金公开接口，禁止高频请求
 
 import type { FundEstimate, FundInfo, NetValueRecord, StockHolding, MarketIndex, FundRankItem } from '@/types/fund'
+import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 
 // ========== K线数据类型 ==========
 export interface KLineData {
@@ -40,37 +41,37 @@ interface PendingNetValueRequest {
   timeout: ReturnType<typeof setTimeout>
 }
 const pendingNetValueRequests: PendingNetValueRequest[] = []
-// [WHAT] 初始化全局 jsonpgz 回调函数
-export function initJsonpCallback() {
-  if (!(window as any).jsonpgz) {
-    ; (window as any).jsonpgz = (data: any) => {
-      // [WHAT] 优先处理估值请求
-      const index = pendingRequests.findIndex(req => req.code === data.fundcode)
-      if (index !== -1 && pendingRequests[index]) {
-        const req = pendingRequests[index]!
-        clearTimeout(req.timeout)
-        pendingRequests.splice(index, 1)
-        req.resolve(data)
-        return
-      }
 
-      // [WHAT] 处理净值请求
-      const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
-      if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
-        const req = pendingNetValueRequests[navIndex]!
-        clearTimeout(req.timeout)
-        pendingNetValueRequests.splice(navIndex, 1)
-
-        const result = {
-          netValue: parseFloat(data.gsz || data.dwjz || '0') || 0,
-          date: data.jzrq || '',
-          changeRate: parseFloat(data.gszzl || '0') || 0
-        }
-        req.resolve(result)
-      }
-    }
+// [WHAT] 注册本模块的 JSONP 响应处理器到共享回调
+registerJsonpHandler((data: any) => {
+  // [WHAT] 优先处理估值请求
+  const index = pendingRequests.findIndex(req => req.code === data.fundcode)
+  if (index !== -1 && pendingRequests[index]) {
+    const req = pendingRequests[index]!
+    clearTimeout(req.timeout)
+    pendingRequests.splice(index, 1)
+    req.resolve(data)
+    return
   }
-}
+
+  // [WHAT] 处理净值请求
+  const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
+  if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
+    const req = pendingNetValueRequests[navIndex]!
+    clearTimeout(req.timeout)
+    pendingNetValueRequests.splice(navIndex, 1)
+
+    const result = {
+      netValue: parseFloat(data.gsz || data.dwjz || '0') || 0,
+      date: data.jzrq || '',
+      changeRate: parseFloat(data.gszzl || '0') || 0
+    }
+    req.resolve(result)
+  }
+})
+
+// [WHAT] 保持导出兼容性（委托给共享模块）
+export { initJsonpCallback }
 
 /**
  * 获取单只基金实时估值（JSONP 方式）
