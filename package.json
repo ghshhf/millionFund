@@ -13,8 +13,15 @@
     "update-funds": "node scripts/fetch-fund-list.mjs",
     "cap:init": "npx cap init",
     "cap:add:android": "npx cap add android",
-    "cap:sync": "npm run build && npx cap sync",
-    "cap:open:android": "npx cap open android"
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npm run build && npx cap copy",
+    "cap:sync:android": "npm run build && npx cap copy android && npx cap sync android",
+    "cap:sync:ios": "npm run build && npx cap copy ios && npx cap sync ios",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "build:all": "bash scripts/build-all.sh",
+    "build:android": "npm run build && npx cap copy && npx cap sync android",
+    "build:ios": "npm run build && npx cap copy && npx cap sync ios"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.5",
