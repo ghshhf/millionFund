@@ -20,8 +20,7 @@ import com.getcapacitor.annotation.PermissionCallback;
         ),
         @Permission(
             alias = "storage",
-            strings = { Manifest.permission.READ_EXTERNAL_STORAGE },
-            maxSdkVersion = 32
+            strings = { Manifest.permission.READ_EXTERNAL_STORAGE }
         ),
         @Permission(
             alias = "media",
