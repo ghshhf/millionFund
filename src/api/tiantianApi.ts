@@ -1346,7 +1346,7 @@ export async function fetchFundAnnouncements(fundCode: string, _pageSize = 10): 
 function getDefaultAnnouncements(_fundCode: string): FundAnnouncement[] {
   const now = new Date()
   const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  
+
   return [
     {
       id: '1',
@@ -1356,15 +1356,8 @@ function getDefaultAnnouncements(_fundCode: string): FundAnnouncement[] {
       url: ''
     },
     {
-      id: '2', 
+      id: '2',
       title: '数据刷新有延迟，仅供学习和参考',
-      date: formatDate(now),
-      type: '其他公告',
-      url: ''
-    },
-    {
-      id: '3',
-      title: '下载后请在24小时内删除',
       date: formatDate(now),
       type: '其他公告',
       url: ''
