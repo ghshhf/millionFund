@@ -688,8 +688,8 @@ export async function fetchKLineData(code: string, days = 120): Promise<KLineDat
   const reversed = [...history].reverse() // 按时间正序
 
   for (let i = 1; i < reversed.length; i++) {
-    const prev = reversed[i - 1]
-    const curr = reversed[i]
+    const prev = reversed[i - 1]!
+    const curr = reversed[i]!
     const open = prev.netValue
     const close = curr.netValue
     // [WHAT] 模拟日内波动：高点和低点基于开盘收盘价的波动
@@ -999,7 +999,7 @@ async function calculateFromHistory(code: string): Promise<PeriodChangeData[]> {
     const history = await fetchNetValueHistory(code, 365)
     if (history.length < 2) return []
 
-    const latest = history[0]
+    const latest = history[0]!
     const result: PeriodChangeData[] = []
     const now = new Date()
 

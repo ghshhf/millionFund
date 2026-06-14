@@ -387,9 +387,9 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
         }
 
         const headerRow = (html.match(/<thead[\s\S]*?<tr[\s\S]*?<\/tr>[\s\S]*?<\/thead>/i) || [])[0] || ''
-        const headerCells = (headerRow.match(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi) || []).map(th => th.replace(/<[^>]*>/g, '').trim())
+        const headerCells = (headerRow.match(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi) || []).map((th: string) => th.replace(/<[^>]*>/g, '').trim())
         let idxCode = -1, idxName = -1, idxWeight = -1
-        headerCells.forEach((h, i) => {
+        headerCells.forEach((h: string, i: number) => {
           const t = h.replace(/\s+/g, '')
           if (idxCode < 0 && (t.includes('股票代码') || t.includes('证券代码'))) idxCode = i
           if (idxName < 0 && (t.includes('股票名称') || t.includes('证券名称'))) idxName = i
@@ -401,7 +401,7 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
 
         const holdings: HoldingStock[] = []
         for (const r of dataRows) {
-          const tds = (r.match(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi) || []).map(td => td.replace(/<[^>]*>/g, '').trim())
+          const tds = (r.match(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi) || []).map((td: string) => td.replace(/<[^>]*>/g, '').trim())
           if (!tds.length) continue
 
           let stockCode = ''
@@ -412,14 +412,14 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
             const m = tds[idxCode].match(/(\d{6})/)
             stockCode = m ? m[1] : tds[idxCode]
           } else {
-            const codeIdx = tds.findIndex(txt => /^\d{6}$/.test(txt))
+            const codeIdx = tds.findIndex((txt: string) => /^\d{6}$/.test(txt))
             if (codeIdx >= 0) stockCode = tds[codeIdx]
           }
 
           if (idxName >= 0 && tds[idxName]) {
             stockName = tds[idxName]
           } else if (stockCode) {
-            const i = tds.findIndex(txt => txt && txt !== stockCode && !/%$/.test(txt))
+            const i = tds.findIndex((txt: string) => txt && txt !== stockCode && !/%$/.test(txt))
             stockName = i >= 0 ? tds[i] : ''
           }
 
@@ -427,7 +427,7 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
             const wm = tds[idxWeight].match(/([\d.]+)\s*%/)
             stockWeight = wm ? `${wm[1]}%` : tds[idxWeight]
           } else {
-            const wIdx = tds.findIndex(txt => /\d+(?:\.\d+)?\s*%/.test(txt))
+            const wIdx = tds.findIndex((txt: string) => /\d+(?:\.\d+)?\s*%/.test(txt))
             stockWeight = wIdx >= 0 ? (tds[wIdx].match(/([\d.]+)\s*%/)?.[1] + '%') : ''
           }
 
@@ -776,7 +776,7 @@ export async function fetchFundAccurateData(code: string, isQDII: boolean = fals
   // })
 
   const now = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = now.toISOString().split('T')[0]!
   const currentHour = now.getHours()
   const currentMinute = now.getMinutes()
 

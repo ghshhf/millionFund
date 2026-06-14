@@ -127,14 +127,14 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
   enhancedHoldings.value = holdings.map(h => ({
     ...h,
     loading: true,
-    selected: h.code && h.amount > 0 && !holdingStore.hasHolding(h.code)
+    selected: !!h.code && h.amount > 0 && !holdingStore.hasHolding(h.code)
   }))
   
   // [WHAT] 并行获取基金信息
   const promises = holdings.map(async (h, index) => {
     // 如果既没有 code 也没有看起来像基金名的名称，则跳过匹配工作
     if (!h.code && !isLikelyFundName(h.name)) {
-      enhancedHoldings.value[index].loading = false
+      enhancedHoldings.value[index]!.loading = false
       return
     }
     
@@ -154,23 +154,23 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
         }
 
         if (results && results.length > 0) {
-          enhancedHoldings.value[index].fundInfo = results[0]
+          enhancedHoldings.value[index]!.fundInfo = results[0]
           if (!h.name) {
-            enhancedHoldings.value[index].name = results[0].name
+            enhancedHoldings.value[index]!.name = results[0]!.name
           }
           // 如果通过名称搜索找到结果且记录中没有 code，填充 code 以便后续获取净值
-          if (!h.code && results[0].code) {
-            enhancedHoldings.value[index].code = results[0].code
+          if (!h.code && results[0]!.code) {
+            enhancedHoldings.value[index]!.code = results[0]!.code
             // 自动选中：当我们填充了 code 且不在已有持仓时，自动勾选以便用户直接导入
-            if (!enhancedHoldings.value[index].selected && enhancedHoldings.value[index].amount > 0 && !holdingStore.hasHolding(results[0].code)) {
-              enhancedHoldings.value[index].selected = true
+            if (!enhancedHoldings.value[index]!.selected && enhancedHoldings.value[index]!.amount > 0 && !holdingStore.hasHolding(results[0]!.code)) {
+              enhancedHoldings.value[index]!.selected = true
             }
           }
         }
       }
 
       // 回退策略：如果仍无 code，且名称看起来像基金名，尝试使用本地全量基金列表做模糊匹配
-      if (!enhancedHoldings.value[index].code && h.name && isLikelyFundName(h.name)) {
+      if (!enhancedHoldings.value[index]!.code && h.name && isLikelyFundName(h.name)) {
         try {
           const fullList = await fetchFundList()
           // 计算得分并选择最佳候选
@@ -181,12 +181,12 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
             if (score > bestScore) { bestScore = score; best = f }
           }
           if (best && bestScore >= 30) {
-            enhancedHoldings.value[index].code = best.code
-            enhancedHoldings.value[index].fundInfo = best
-            if (!enhancedHoldings.value[index].name) enhancedHoldings.value[index].name = best.name
+            enhancedHoldings.value[index]!.code = best.code
+            enhancedHoldings.value[index]!.fundInfo = best
+            if (!enhancedHoldings.value[index]!.name) enhancedHoldings.value[index]!.name = best.name
             // 自动选中回填的候选
-            if (!enhancedHoldings.value[index].selected && enhancedHoldings.value[index].amount > 0 && !holdingStore.hasHolding(best.code)) {
-              enhancedHoldings.value[index].selected = true
+            if (!enhancedHoldings.value[index]!.selected && enhancedHoldings.value[index]!.amount > 0 && !holdingStore.hasHolding(best.code)) {
+              enhancedHoldings.value[index]!.selected = true
             }
           }
         } catch (err) {
@@ -196,16 +196,16 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
       }
 
       // [WHAT] 仅在有基金代码时获取当前净值
-      if (enhancedHoldings.value[index].code) {
-        const estimate = await fetchFundEstimate(enhancedHoldings.value[index].code)
+      if (enhancedHoldings.value[index]!.code) {
+        const estimate = await fetchFundEstimate(enhancedHoldings.value[index]!.code)
         if (estimate) {
-          enhancedHoldings.value[index].netValue = parseFloat(estimate.dwjz) || parseFloat(estimate.gsz) || 1
+          enhancedHoldings.value[index]!.netValue = parseFloat(estimate.dwjz) || parseFloat(estimate.gsz) || 1
         }
       }
     } catch (error) {
       console.error(`获取基金 ${h.code} 信息失败:`, error)
     } finally {
-      enhancedHoldings.value[index].loading = false
+      enhancedHoldings.value[index]!.loading = false
     }
   })
   
@@ -214,7 +214,7 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
 
 // [WHAT] 切换选中状态
 function toggleSelect(index: number) {
-  const holding = enhancedHoldings.value[index]
+  const holding = enhancedHoldings.value[index]!
   if (!holding.code) {
     showToast('该项缺少基金代码')
     return
@@ -242,7 +242,7 @@ function toggleSelectAll() {
 function updateAmount(index: number, value: string) {
   const amount = parseFloat(value)
   if (!isNaN(amount) && amount >= 0) {
-    enhancedHoldings.value[index].amount = amount
+    enhancedHoldings.value[index]!.amount = amount
   }
 }
 
@@ -278,10 +278,10 @@ async function confirmImport() {
         // [WHAT] 计算持有份额
         const shares = h.amount / netValue
         
-        const buyDate = h.buyDate || new Date().toISOString().split('T')[0]
+        const buyDate = h.buyDate || new Date().toISOString().split('T')[0]! || ''
         const record: HoldingRecord = {
           code: h.code,
-          name: h.name || h.fundInfo?.name || h.code,
+          name: h.name || h.fundInfo?.name || h.code || '',
           buyNetValue: netValue,
           shares: shares,
           buyDate: buyDate,
