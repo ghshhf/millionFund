@@ -5,6 +5,18 @@
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import { useNetworkStore } from '@/stores/network'
+
+// [WHAT] 网络状态 store - 初始化并在组件生命周期内管理
+const networkStore = useNetworkStore()
+
+onMounted(() => {
+  networkStore.init()
+})
+
+onUnmounted(() => {
+  networkStore.cleanup()
+})
 
 // [WHAT] 水印文字
 const watermarkText = '软件AI百万实盘NEW'
@@ -99,12 +111,15 @@ function goToAITracking() {
 
 <template>
   <div class="app-container">
-    <!-- 全局水印 -->
-    <!-- <div class="watermark">
-      <div class="watermark-content">
-        <span v-for="i in 50" :key="i" class="watermark-text">{{ watermarkText }}</span>
+    <!-- 网络状态提示条 -->
+    <!-- [WHY] APK 用户在弱网/断网环境打开时，之前只能看到空白数据 -->
+    <!--        用户会以为应用坏了，现在有明确提示 -->
+    <transition name="slide-down">
+      <div v-if="!networkStore.isOnline" class="network-offline-bar">
+        <span class="network-icon">⚠</span>
+        <span class="network-text">{{ networkStore.statusText }}</span>
       </div>
-    </div> -->
+    </transition>
 
     <!-- 路由视图 -->
     <!-- [WHY] 暂时禁用 keep-alive 避免页面缓存混乱 -->
@@ -234,5 +249,41 @@ function goToAITracking() {
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* ========== 网络状态提示条 ========== */
+
+.network-offline-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  z-index: 1000;
+}
+
+.network-icon {
+  font-size: 16px;
+}
+
+.network-text {
+  text-align: center;
+}
+
+/* 进入/离开动画 */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  transform: translateY(-100%);
+  opacity: 0;
 }
 </style>

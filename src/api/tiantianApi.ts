@@ -10,34 +10,97 @@ import { queueGlobalVarScript } from './fundFast'
 /**
  * 交易时段枚举
  */
-export type TradingSession = 'morning' | 'noon_break' | 'afternoon' | 'closed'
+export type TradingSession = 'morning' | 'noon_break' | 'afternoon' | 'closed' | 'weekend' | 'holiday' | 'pre_market' | 'post_market'
 
 /**
- * 获取当前交易时段
- * [WHY] 区分上午盘、午休、下午盘、休市，用于精确控制数据刷新策略
- * [WHAT] 上午盘 9:30-11:30，午休 11:30-13:00，下午盘 13:00-15:00
+ * [WHY] A股法定节假日休市（含调休后的工作日补休）
+ *        仅保留近一年 + 近一年的日期，后续每年手动更新即可
+ */
+const CHINA_STOCK_HOLIDAYS_2025_2026: Set<string> = new Set([
+  // 2025 春节 1月28日-2月4日
+  '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31',
+  '2025-02-03', '2025-02-04',
+  // 2025 清明节 4月4日-4月7日
+  '2025-04-04', '2025-04-07',
+  // 2025 劳动节 5月1日-5月5日
+  '2025-05-01', '2025-05-02', '2025-05-05',
+  // 2025 端午节 5月30日-6月2日
+  '2025-05-30', '2025-06-02',
+  // 2025 中秋节国庆节 10月1日-10月8日
+  '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-06', '2025-10-07', '2025-10-08',
+  // 2026 元旦 1月1日-1月3日
+  '2026-01-01', '2026-01-02', '2026-01-03',
+  // 2026 春节 2月16日-2月24日
+  '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
+  '2026-02-23', '2026-02-24',
+  // 2026 清明节 4月4日-4月6日
+  '2026-04-06',
+  // 2026 劳动节 5月1日-5月5日
+  '2026-05-01', '2026-05-04', '2026-05-05',
+  // 2026 端午节 6月19日-6月22日
+  '2026-06-19', '2026-06-22',
+  // 2026 中秋节 10月5日-10月6日
+  '2026-10-05', '2026-10-06',
+  // 2026 国庆节 10月1日-10月8日
+  '2026-10-01', '2026-10-02', '2026-10-07', '2026-10-08',
+])
+
+function formatDateKey(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * 获取当前交易时段（增强版：区分周末/节假日/盘前/盘后）
+ * [WHY] 之前在非交易日只会显示"已收盘"，用户不知道是休市还是非交易时间
+ * [WHAT] 精确区分 morning / noon_break / afternoon / pre_market / post_market / weekend / holiday / closed
  */
 export function getTradingSession(): TradingSession {
   const now = new Date()
   const hour = now.getHours()
   const minute = now.getMinutes()
   const day = now.getDay()
-  const timeMinutes = hour * 60 + minute // 当前时间转换为分钟数
-  
-  // [WHAT] 周末休市
-  if (day === 0 || day === 6) return 'closed'
-  
-  // [WHAT] 上午盘：9:30 - 11:30 (570 - 690分钟)
+  const timeMinutes = hour * 60 + minute
+
+  // 1) 周末
+  if (day === 0 || day === 6) return 'weekend'
+
+  // 2) 法定节假日
+  if (CHINA_STOCK_HOLIDAYS_2025_2026.has(formatDateKey(now))) return 'holiday'
+
+  // 3) 盘前（0:00 - 9:30）
+  if (timeMinutes < 570) return 'pre_market'
+
+  // 4) 上午盘：9:30 - 11:30
   if (timeMinutes >= 570 && timeMinutes < 690) return 'morning'
-  
-  // [WHAT] 午休：11:30 - 13:00 (690 - 780分钟)
+
+  // 5) 午休：11:30 - 13:00
   if (timeMinutes >= 690 && timeMinutes < 780) return 'noon_break'
-  
-  // [WHAT] 下午盘：13:00 - 15:00 (780 - 900分钟)
+
+  // 6) 下午盘：13:00 - 15:00
   if (timeMinutes >= 780 && timeMinutes < 900) return 'afternoon'
-  
-  // [WHAT] 其他时间休市
-  return 'closed'
+
+  // 7) 盘后
+  return 'post_market'
+}
+
+/**
+ * [WHAT] 返回人类友好的交易状态文本，用于 UI 显示
+ */
+export function getTradingSessionText(): string {
+  const session = getTradingSession()
+  switch (session) {
+    case 'morning': return '上午交易中'
+    case 'noon_break': return '午休中'
+    case 'afternoon': return '下午交易中'
+    case 'pre_market': return '等待开盘'
+    case 'post_market': return '已收盘'
+    case 'weekend': return '周末休市'
+    case 'holiday': return '节假日休市'
+    default: return '非交易时段'
+  }
 }
 
 /**
@@ -56,7 +119,7 @@ export function isTradingTime(): boolean {
  */
 export function isTradingDay(): boolean {
   const session = getTradingSession()
-  return session !== 'closed'
+  return session === 'morning' || session === 'noon_break' || session === 'afternoon' || session === 'post_market' || session === 'pre_market'
 }
 
 /**
@@ -64,16 +127,11 @@ export function isTradingDay(): boolean {
  * [WHY] 9:30后即使午休也认为今天已开盘，应该用今天的数据
  */
 export function hasMarketOpenedToday(): boolean {
+  const session = getTradingSession()
+  // 周末 / 节假日永远不算"开过盘"
+  if (session === 'weekend' || session === 'holiday') return false
   const now = new Date()
-  const hour = now.getHours()
-  const minute = now.getMinutes()
-  const day = now.getDay()
-  const timeMinutes = hour * 60 + minute
-  
-  // [WHAT] 周末不算开盘
-  if (day === 0 || day === 6) return false
-  
-  // [WHAT] 9:30 后算开盘（包括收盘后到24点）
+  const timeMinutes = now.getHours() * 60 + now.getMinutes()
   return timeMinutes >= 570
 }
 

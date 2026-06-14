@@ -3,13 +3,15 @@
 // [WHAT] 显示持仓列表、汇总统计，支持添加/编辑/删除持仓
 // [WHAT] 支持 A类/C类基金费用计算
 
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHoldingStore } from '@/stores/holding'
 import { useAITrackingStore } from '@/stores/aiTracking'
+import { useNetworkStore } from '@/stores/network'
+import { useFundStore } from '@/stores/fund'
 import { searchFund, fetchFundEstimate } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
-import { showConfirmDialog, showToast, showLoadingToast, closeToast } from 'vant'
+import { showConfirmDialog, showToast, showLoadingToast, closeToast, showActionSheet } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import { formatMoney, formatPercent, getChangeStatus } from '@/utils/format'
 import { saveHoldings, saveSourceFilter, getSourceFilter } from '@/utils/storage'
@@ -22,6 +24,19 @@ import downW from '@/assets/downW.jpg'
 const router = useRouter()
 const holdingStore = useHoldingStore()
 const aiTrackingStore = useAITrackingStore()
+const networkStore = useNetworkStore()
+const fundStore = useFundStore()
+
+// [WHY] 子组件错误捕获 - 防止整个页面白屏
+const holdingHasError = ref(false)
+const holdingErrorMsg = ref('')
+
+onErrorCaptured((err) => {
+  console.error('[Holding.vue] 组件错误:', err)
+  holdingHasError.value = true
+  holdingErrorMsg.value = err instanceof Error ? err.message : String(err)
+  return false
+})
 
 // ========== 表单相关 ==========
 const showAddDialog = ref(false)
@@ -64,6 +79,16 @@ onMounted(() => {
   holdingStore.initHoldings()
   currentSourceFilter.value = getSourceFilter()
 })
+
+// [WHY] 网络恢复后自动刷新持仓数据
+watch(
+  () => networkStore.justRecovered,
+  (recovered) => {
+    if (recovered) {
+      onRefresh()
+    }
+  }
+)
 
 // [WHAT] 排序方向
 const sortDirection = ref<'up' | 'down' | 'none'>('none')
@@ -373,6 +398,61 @@ function goHome() {
 // [WHAT] 跳转到基金详情
 function goToDetail(code: string) {
   router.push(`/detail/${code}`)
+}
+
+// [WHY] 长按持仓卡片弹出快捷操作菜单
+// [WHAT] 查看详情 / 调整成本 / 加入自选 / 删除
+async function onHoldingLongPress(code: string, fundName: string) {
+  try {
+    const result = await showActionSheet({
+      title: `${fundName || '基金'} · 快捷操作`,
+      actions: [
+        { name: '查看详情' },
+        { name: '调整成本' },
+        { name: '加入自选' },
+        { name: '删除持仓' }
+      ]
+    })
+    const selected = (result as { index: number }).index
+    if (selected === 0) {
+      goToDetail(code)
+    } else if (selected === 1) {
+      openCostDialog(code)
+    } else if (selected === 2) {
+      const alreadyInWatchlist = fundStore.watchlist.some(f => f.code === code)
+      if (alreadyInWatchlist) {
+        showToast('已在自选中')
+      } else {
+        await fundStore.addFund(code)
+        showToast('已加入自选')
+      }
+    } else if (selected === 3) {
+      handleDelete(code)
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// [WHAT] 500ms 长按检测（避免每次点击都触发）
+let holdingPressTimer: ReturnType<typeof setTimeout> | null = null
+let pendingLongPressCode = ''
+let pendingLongPressName = ''
+
+function startHoldLongPress(code: string, name: string) {
+  pendingLongPressCode = code
+  pendingLongPressName = name
+  holdingPressTimer = setTimeout(() => {
+    onHoldingLongPress(pendingLongPressCode, pendingLongPressName)
+    holdingPressTimer = null
+  }, 500)
+}
+
+function stopHoldLongPress() {
+  if (holdingPressTimer) {
+    clearTimeout(holdingPressTimer)
+    holdingPressTimer = null
+  }
 }
 
 // [WHAT] 截图导入完成回调
@@ -827,7 +907,13 @@ async function refreshHoldings() {
         <div v-for="(row, rowIndex) in groupedHoldings" :key="rowIndex" class="holding-row">
           <div v-for="holding in row" :key="holding.code" class="holding-item">
             <div class="col-name">
-              <div class="fund-name-wrapper" @click="goToDetail(holding.code)">
+              <div
+                class="fund-name-wrapper"
+                @click="goToDetail(holding.code)"
+                @touchstart.passive="startHoldLongPress(holding.code, holding.name)"
+                @touchend="stopHoldLongPress"
+                @touchmove.passive="stopHoldLongPress"
+              >
                 <div class="fund-name-line">
                   <span v-if="holding.isQDII" class="qdii-tag">QD</span>
                   <div class="fund-name">

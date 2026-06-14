@@ -14,7 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   delete: [code: string]
   click: [code: string]
-  longpress: []
+  longpress: [code: string, name: string]
 }>()
 
 // [WHAT] 价格闪烁状态（模仿交易所效果）
@@ -54,7 +54,7 @@ let pressTimer: ReturnType<typeof setTimeout> | null = null
 
 function onTouchStart() {
   pressTimer = setTimeout(() => {
-    emit('longpress')
+    emit('longpress', props.fund.code, props.fund.name)
   }, 500) // 长按500ms触发
 }
 
