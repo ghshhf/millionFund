@@ -10,7 +10,7 @@ import App from './App.vue'
 import { logger } from '@/utils/logger'
 import { checkVersionAndClearCache, checkSchemaAndMigrate } from '@/utils/storage'
 import { useThemeStore } from '@/stores/theme'
-import { initMobileDefaultCache } from '@/api/tiantianApi'
+import { initMobileDefaultCache, initHolidayData } from '@/api/tiantianApi'
 
 // [WHY] 导入 Vant 样式和必要的函数组件样式
 import 'vant/lib/index.css'
@@ -64,3 +64,12 @@ try {
 } catch (err) {
   logger.warn('移动端默认缓存初始化失败', err)
 }
+
+	// [WHAT] 初始化节假日数据（API + 兜底降级）
+	// [WHY] 替代硬编码集合，每年自动适配无需手动更新
+	// [NOTE] fire-and-forget，先由兜底保障，API 返回后自动覆盖
+	initHolidayData().then(() => {
+	  logger.info('节假日数据初始化完成')
+	}).catch((err) => {
+	  logger.warn('节假日数据初始化失败，使用兜底数据', err)
+	})
