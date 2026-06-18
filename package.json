@@ -3,7 +3,10 @@
   "private": true,
   "version": "1.9.1",
   "description": "AI百万实盘 - 全平台基金管理系统，支持实时估值、持仓管理、AI调仓追踪",
-  "author": "millionFund",
+  "author": {
+    "name": "millionFund",
+    "email": "fund@millionFund.app"
+  },
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
