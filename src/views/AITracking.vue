@@ -173,6 +173,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { useAITrackingStore, type AITrackingRecord } from '@/stores/aiTracking'
+import { logger } from '@/utils/logger'
 import { fetchFundAccurateData, fetchNetValueHistoryFast } from '@/api/fundFast'
 
 const aiTrackingStore = useAITrackingStore()
@@ -336,7 +337,7 @@ async function fetchFundInfo(type: 'sell' | 'buy') {
       }
     }
   } catch (e) {
-    console.error('Failed to fetch fund info:', e)
+    logger.error('Failed to fetch fund info', e)
   }
 }
 
@@ -439,7 +440,7 @@ async function confirmAddRecord() {
     showAddModal.value = false
   } catch (e) {
     showToast({ message: '添加失败', duration: 2000 })
-    console.error(e)
+    logger.error('添加调仓记录失败', e)
   }
 }
 
@@ -504,7 +505,7 @@ async function fetchCurrentPrices() {
       const info = await fetchFundAccurateData(code)
       fundPrices.value[code] = info?.currentValue || 0
     } catch (e) {
-      console.error(`Failed to fetch price for ${code}:`, e)
+      logger.error(`Failed to fetch price for ${code}`, e)
     }
   }
 
@@ -546,7 +547,7 @@ async function fetchCurrentPrices() {
           aiTrackingStore.confirmRecordNav(record.id, newSellNav, newBuyNav)
         }
       } catch (e) {
-        console.error(`Failed to fetch history for record ${record.id}:`, e)
+        logger.error(`Failed to fetch history for record ${record.id}`, e)
       }
     }
   }

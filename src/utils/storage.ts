@@ -3,6 +3,7 @@
 
 import { APP_VERSION } from '@/config/version'
 import { cache } from '@/api/cache'
+import { logger } from './logger'
 
 const STORAGE_KEYS = {
   WATCHLIST: 'fund_watchlist',
@@ -51,16 +52,29 @@ const migrations: Record<number, Migration> = {
 }
 
 /**
+ * [WHAT] Schema 迁移结果
+ */
+export interface SchemaMigrationResult {
+  appliedMigrations: number[]
+  finalVersion: number
+}
+
+/**
  * [WHAT] 检查当前存储的 schema 版本，必要时执行迁移
  */
-export function checkSchemaAndMigrate(): void {
+export function checkSchemaAndMigrate(): SchemaMigrationResult {
+  const result: SchemaMigrationResult = {
+    appliedMigrations: [],
+    finalVersion: 0,
+  }
   try {
     const rawMeta = localStorage.getItem(SCHEMA_META_KEY)
     const meta: SchemaMeta = rawMeta ? JSON.parse(rawMeta) : { version: 0, lastMigratedAt: 0 }
 
-    if (meta.version >= STORAGE_SCHEMA_VERSION) return
+    result.finalVersion = meta.version
+    if (meta.version >= STORAGE_SCHEMA_VERSION) return result
 
-    console.info(`[storage] Schema migration required: v${meta.version} → v${STORAGE_SCHEMA_VERSION}`)
+    logger.info(`[storage] Schema migration required: v${meta.version} → v${STORAGE_SCHEMA_VERSION}`)
 
     // 读取所有用户数据到内存
     const allData: Record<string, any> = {
@@ -74,9 +88,11 @@ export function checkSchemaAndMigrate(): void {
     // 按顺序执行迁移（从 meta.version+1 一直到 STORAGE_SCHEMA_VERSION）
     let migratedData = allData
     for (let v = meta.version + 1; v <= STORAGE_SCHEMA_VERSION; v++) {
-      if (migrations[v]) {
-        migratedData = migrations[v](migratedData)
-        console.info(`[storage] Applied migration v${v}`)
+      const migrationFn = migrations[v]
+      if (migrationFn) {
+        migratedData = migrationFn(migratedData)
+        result.appliedMigrations.push(v)
+        logger.info(`[storage] Applied migration v${v}`)
       }
     }
 
@@ -97,10 +113,12 @@ export function checkSchemaAndMigrate(): void {
       lastMigratedAt: Date.now()
     }
     localStorage.setItem(SCHEMA_META_KEY, JSON.stringify(newMeta))
-    console.info(`[storage] Schema migration complete: v${STORAGE_SCHEMA_VERSION}`)
+    result.finalVersion = STORAGE_SCHEMA_VERSION
+    logger.info(`[storage] Schema migration complete: v${STORAGE_SCHEMA_VERSION}`)
   } catch (e) {
-    console.warn('[storage] checkSchemaAndMigrate failed:', (e as Error)?.message)
+    logger.warn('[storage] checkSchemaAndMigrate failed', (e as Error)?.message)
   }
+  return result
 }
 
 /**
@@ -177,7 +195,7 @@ export function checkVersionAndClearCache(): void {
       localStorage.setItem(STORAGE_KEYS.APP_VERSION, APP_VERSION)
     }
   } catch (e) {
-    console.warn('[storage] checkVersionAndClearCache failed:', (e as Error)?.message)
+    logger.warn('[storage] checkVersionAndClearCache failed', (e as Error)?.message)
   }
 }
 
@@ -207,7 +225,7 @@ function setItem<T>(key: string, value: T): boolean {
     return true
   } catch (e) {
     const errorName = (e as Error)?.name || 'Error'
-    console.warn(`[storage] setItem failed for key "${key}": ${errorName}`)
+    logger.warn(`[storage] setItem failed for key "${key}": ${errorName}`)
     return false
   }
 }

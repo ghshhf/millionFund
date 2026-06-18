@@ -9,6 +9,7 @@ import { recognizeHoldings, type RecognizedHolding } from '@/utils/ocr'
 import { searchFund, fetchFundEstimate, fetchFundList } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
 import { useHoldingStore } from '@/stores/holding'
+import { logger } from '@/utils/logger'
 import { requestPermissions } from '@/utils/permissions'
 import type { HoldingRecord, FundInfo } from '@/types/fund'
 
@@ -106,7 +107,7 @@ async function startRecognition(file: File) {
     step.value = 'preview'
     
   } catch (error) {
-    console.error('OCR识别失败:', error)
+    logger.error('OCR识别失败', error)
     showToast('识别失败，请重试')
     step.value = 'upload'
   }
@@ -181,7 +182,7 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
           }
         } catch (err) {
           // 忽略匹配失败
-          console.warn('本地基金列表模糊匹配失败', err)
+          logger.warn('本地基金列表模糊匹配失败', err)
         }
       }
 
@@ -193,7 +194,7 @@ async function enhanceHoldings(holdings: RecognizedHolding[]) {
         }
       }
     } catch (error) {
-      console.error(`获取基金 ${h.code} 信息失败:`, error)
+      logger.error(`获取基金 ${h.code} 信息失败`, error)
     } finally {
       enhancedHoldings.value[index]!.loading = false
     }
@@ -282,7 +283,7 @@ async function confirmImport() {
         await holdingStore.addOrUpdateHolding(record)
         imported++
       } catch (error) {
-        console.error(`导入基金 ${h.code} 失败:`, error)
+        logger.error(`导入基金 ${h.code} 失败`, error)
         failed++
       }
     }
@@ -298,7 +299,7 @@ async function confirmImport() {
     
   } catch (error) {
     closeToast()
-    console.error('导入失败:', error)
+    logger.error('导入失败', error)
     showToast('导入失败，请重试')
     step.value = 'preview'
   }

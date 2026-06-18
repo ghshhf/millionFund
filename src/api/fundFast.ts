@@ -6,6 +6,7 @@ import { cache, CACHE_TTL } from './cache'
 import { persistCache } from './tiantianApi'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
+import { logger } from '@/utils/logger'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
@@ -117,7 +118,8 @@ export function queueGlobalVarScript<T>(
         try {
           const result = await extract()
           finish(result)
-        } catch {
+        } catch (e) {
+          logger.warn('[fundFast] queueGlobalVarScript extract failed', e)
           finish(emptyResult)
         }
       }
@@ -268,7 +270,7 @@ export async function fetchFundEstimatesBatch(codes: string[]): Promise<Map<stri
       const data = await fetchFundEstimateFast(code)
       results.set(code, data)
     } catch (err) {
-      console.error('批量获取估值失败:', code, err)
+      logger.error('批量获取估值失败', { code, error: err })
     }
   })
 
@@ -303,8 +305,8 @@ export async function fetchFundList(): Promise<FundInfo[]> {
         _fundListCache = data as FundInfo[]
         return _fundListCache
       }
-    } catch {
-      /* 此路径失败，尝试下一个 */
+    } catch (e) {
+      logger.warn('[fundFast] 加载本地基金列表失败', { path, error: e })
     }
   }
 
@@ -600,7 +602,7 @@ export async function fetchIntradayData(code: string, forceRefresh = false): Pro
     }
     return null
   } catch (e) {
-    console.error('获取分时数据失败', code, e)
+    logger.error('获取分时数据失败', { code, error: e })
     return null
   }
 }
@@ -1086,7 +1088,7 @@ export async function fetchFundAccurateBatch(codes: string[]): Promise<Map<strin
       const data = await fetchFundAccurateData(code)
       results.set(code, data)
     } catch (err) {
-      console.error('批量获取准确数据失败:', code, err)
+      logger.error('批量获取准确数据失败', { code, error: err })
     }
   }))
 
@@ -1232,7 +1234,8 @@ export async function fetchMarketIndicesFast(): Promise<MarketIndexSimple[]> {
 
     cache.set(cacheKey, indices, CACHE_TTL.MARKET_INDEX)
     return indices
-  } catch {
+  } catch (e) {
+    logger.warn('[fundFast] 获取大盘指数失败', e)
     return []
   }
 }
@@ -1346,7 +1349,7 @@ export async function fetchFundRankingFast(
     cache.set(cacheKey, items, 30000)  // 30秒缓存
     return items
   } catch (err) {
-    console.error('获取基金排行失败:', err)
+    logger.error('获取基金排行失败', err)
     return []
   }
 }
@@ -1496,7 +1499,8 @@ export async function fetchGlobalIndices(): Promise<GlobalIndex[]> {
 
     cache.set(cacheKey, results, CACHE_TTL.MARKET_INDEX)
     return results
-  } catch {
+  } catch (e) {
+    logger.warn('[fundFast] 获取全球指数失败', e)
     return getDefaultGlobalIndices()
   }
 }

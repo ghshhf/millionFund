@@ -11,10 +11,11 @@ import { useNetworkStore } from '@/stores/network'
 import { useFundStore } from '@/stores/fund'
 import { searchFund, fetchFundEstimate } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
-import { showConfirmDialog, showToast, showLoadingToast, closeToast, showActionSheet } from 'vant'
+import { showConfirmDialog, showToast, showLoadingToast, closeToast, ActionSheet } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import { formatMoney, formatPercent, getChangeStatus } from '@/utils/format'
 import { saveHoldings, saveSourceFilter, getSourceFilter } from '@/utils/storage'
+import { logger, copyLogsToClipboard } from '@/utils/logger'
 import { isWeb, isMobile } from '@/utils/platform'
 import type { FundInfo, HoldingRecord } from '@/types/fund'
 import ScreenshotImport from '@/components/ScreenshotImport.vue'
@@ -32,7 +33,7 @@ const holdingHasError = ref(false)
 const holdingErrorMsg = ref('')
 
 onErrorCaptured((err) => {
-  console.error('[Holding.vue] 组件错误:', err)
+  logger.error('[Holding.vue] 组件错误', err)
   holdingHasError.value = true
   holdingErrorMsg.value = err instanceof Error ? err.message : String(err)
   return false
@@ -49,6 +50,13 @@ const formData = ref({
   name: '',
   amount: ''
 })
+
+// ========== ActionSheet 相关 ==========
+const showActionSheetDialog = ref(false)
+const actionSheetTitle = ref('')
+const actionSheetActions = ref<{ name: string; key: string }[]>([])
+const pendingActionSheetCode = ref('')
+const pendingActionSheetName = ref('')
 
 // ========== 批量录入相关 ==========
 const showBatchDialog = ref(false)
@@ -403,34 +411,41 @@ function goToDetail(code: string) {
 // [WHY] 长按持仓卡片弹出快捷操作菜单
 // [WHAT] 查看详情 / 调整成本 / 加入自选 / 删除
 async function onHoldingLongPress(code: string, fundName: string) {
-  try {
-    const result = await showActionSheet({
-      title: `${fundName || '基金'} · 快捷操作`,
-      actions: [
-        { name: '查看详情' },
-        { name: '调整成本' },
-        { name: '加入自选' },
-        { name: '删除持仓' }
-      ]
-    })
-    const selected = (result as { index: number }).index
-    if (selected === 0) {
-      goToDetail(code)
-    } else if (selected === 1) {
-      openCostDialog(code)
-    } else if (selected === 2) {
-      const alreadyInWatchlist = fundStore.watchlist.some(f => f.code === code)
-      if (alreadyInWatchlist) {
-        showToast('已在自选中')
-      } else {
-        await fundStore.addFund(code)
-        showToast('已加入自选')
-      }
-    } else if (selected === 3) {
-      handleDelete(code)
+  pendingActionSheetCode.value = code
+  pendingActionSheetName.value = fundName
+  actionSheetTitle.value = `${fundName || '基金'} · 快捷操作`
+  actionSheetActions.value = [
+    { name: '查看详情', key: 'detail' },
+    { name: '调整成本', key: 'cost' },
+    { name: '加入自选', key: 'watchlist' },
+    { name: '删除持仓', key: 'delete' }
+  ]
+  showActionSheetDialog.value = true
+}
+
+function onActionSheetSelect(index: number) {
+  const action = actionSheetActions.value[index]
+  const code = pendingActionSheetCode.value
+  const fundName = pendingActionSheetName.value
+  
+  if (!action || !code) return
+  
+  showActionSheetDialog.value = false
+  
+  if (action.key === 'detail') {
+    goToDetail(code)
+  } else if (action.key === 'cost') {
+    openCostDialog(code)
+  } else if (action.key === 'watchlist') {
+    const alreadyInWatchlist = fundStore.watchlist.some(f => f.code === code)
+    if (alreadyInWatchlist) {
+      showToast('已在自选中')
+    } else {
+      fundStore.addFund(code, fundName || '')
+      showToast('已加入自选')
     }
-  } catch {
-    // 用户取消
+  } else if (action.key === 'delete') {
+    handleDelete(code)
   }
 }
 
@@ -699,7 +714,7 @@ async function batchImport() {
             netValue = latestNetValue.netValue
           }
         } catch (error) {
-          console.error('获取净值失败，使用默认值:', error)
+          logger.warn('获取净值失败，使用默认值', error)
         }
         
         const marketValue = parseFloat(item.amount)
@@ -731,7 +746,7 @@ async function batchImport() {
         results.push(fund.code)
       } catch (error) {
         batchItems.value[index]!.error = '导入失败'
-        console.error('批量导入失败:', error)
+        logger.error('批量导入失败', error)
         results.push(null)
       } finally {
         batchItems.value[index]!.loading = false
@@ -766,10 +781,20 @@ async function refreshHoldings() {
     await holdingStore.refreshEstimates()
     showToast('刷新成功')
   } catch (error) {
-    console.error('刷新失败:', error)
+    logger.error('刷新失败', error)
     showToast('刷新失败，请重试')
   } finally {
     closeToast()
+  }
+}
+
+// [WHAT] 一键复制日志
+async function onCopyLogs(): Promise<void> {
+  const ok = await copyLogsToClipboard()
+  if (ok) {
+    showToast(`日志已复制 (${logger.getAll().length}条)`)
+  } else {
+    showToast('复制失败，请手动复制')
   }
 }
 </script>
@@ -783,6 +808,8 @@ async function refreshHoldings() {
         <!-- 网页端按钮 -->
         <div class="web-actions web-only">
           <van-icon name="replay" size="20" @click="refreshHoldings" class="refresh-icon" />
+          <van-icon name="description-o" size="20" @click="onCopyLogs" title="复制日志" />
+          <van-button size="small" @click="showImportDialog = true" class="nav-btn">导入</van-button>
           <van-button size="small" @click="openBatchDialog" class="nav-btn">批量</van-button>
           <van-button size="small" @click="backupHoldings" class="nav-btn">备份</van-button>
           <van-button size="small" @click="restoreHoldings" class="nav-btn">恢复</van-button>
@@ -804,6 +831,8 @@ async function refreshHoldings() {
             @click="handleSort('down')"
             alt="降序" 
           />
+          <van-icon name="description-o" size="20" @click="onCopyLogs" title="复制日志" />
+          <van-button size="small" @click="showImportDialog = true">导入</van-button>
           <van-button size="small" @click="openBatchDialog">批量</van-button>
           <van-button size="small" @click="restoreHoldings">恢复</van-button>
         </div>
@@ -1095,6 +1124,14 @@ async function refreshHoldings() {
         </div>
       </div>
     </van-popup>
+
+    <!-- ActionSheet 快捷操作菜单 -->
+    <van-action-sheet
+      v-model:show="showActionSheetDialog"
+      :title="actionSheetTitle"
+      :actions="actionSheetActions"
+      @select="onActionSheetSelect"
+    />
 
     <!-- 截图导入弹窗 -->
     <ScreenshotImport 

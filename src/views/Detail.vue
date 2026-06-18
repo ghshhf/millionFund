@@ -24,6 +24,7 @@ import {
 } from '@/utils/statistics'
 import { getFundNetValue } from '@/utils/storage'
 import { fetchNetValueHistoryFast } from '@/api/fundFast'
+import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -219,7 +220,7 @@ async function loadTrendPrediction() {
       }
     }
   } catch (err) {
-    console.error('获取趋势预测失败:', err)
+    logger.error('获取趋势预测失败', err)
   } finally {
     isTrendLoading.value = false
   }

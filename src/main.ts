@@ -1,56 +1,66 @@
 // [WHY] 应用入口文件，初始化 Vue 应用和插件
 // [WHAT] 注册 Pinia、Vue Router、Vant 等插件
+// [NOTE] 所有 import 必须在文件顶部（ESM 规范），非顶层 import 会导致打包异常
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 
+import { logger } from '@/utils/logger'
+import { checkVersionAndClearCache, checkSchemaAndMigrate } from '@/utils/storage'
+import { useThemeStore } from '@/stores/theme'
+import { initMobileDefaultCache } from '@/api/tiantianApi'
+
 // [WHY] 导入 Vant 样式和必要的函数组件样式
 import 'vant/lib/index.css'
-
-// 导入全局样式
 import './style.css'
-
-// [WHY] 导入主题CSS变量
 import './styles/theme.css'
-
-// [WHY] 导入响应式布局样式
 import './styles/responsive.css'
 
 const pinia = createPinia()
 const app = createApp(App)
 
-// [WHAT] 注册 Pinia 状态管理
 app.use(pinia)
-
-// [WHAT] 注册 Vue Router
 app.use(router)
 
 // [WHY] 全局 Vue 错误处理器 - 捕获组件渲染/事件处理中的未处理异常
-app.config.errorHandler = (err, instance, info) => {
-  console.error('[Vue Error]', err, info)
+// [NOTE] 同时写入 logger，便于用户通过"复制日志"带过来
+app.config.errorHandler = (err, _instance, info) => {
+  logger.error('[Vue Error]', { error: err instanceof Error ? `${err.name}: ${err.message}` : String(err), info })
 }
 
 // [WHY] 全局未处理 Promise 拒绝 - 捕获 async 函数中未 catch 的错误
+// [NOTE] 同样写入 logger
 window.onunhandledrejection = (event) => {
-  console.error('[Unhandled Rejection]', event.reason)
+  const reason = event.reason
+  logger.error('[Unhandled Rejection]', {
+    reason: reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  })
 }
 
 app.mount('#app')
 
 // [WHAT] 检查版本并清除旧缓存
-import { checkVersionAndClearCache, checkSchemaAndMigrate } from './utils/storage'
-checkVersionAndClearCache()
+// [WHY] 版本号变更后需要清理旧的 localStorage 数据，避免读到格式不一致的旧数据
+const versionResult = checkVersionAndClearCache()
+logger.info('版本缓存检查', versionResult)
+
 // [WHY] 数据 schema 迁移：老用户升级后需要补全新字段，否则会读取到 undefined
-checkSchemaAndMigrate()
+const schemaResult = checkSchemaAndMigrate()
+logger.info('Schema 迁移', { applied: schemaResult.appliedMigrations.length, finalVersion: schemaResult.finalVersion })
 
 // [WHAT] 初始化主题
-import { useThemeStore } from './stores/theme'
 const themeStore = useThemeStore()
 themeStore.initTheme()
+logger.info('主题初始化', { current: themeStore.currentTheme })
 
 // [WHAT] 初始化移动端默认缓存
 // [WHY] 移动端 WebView 对 JSONP 有限制，首次运行需要预设数据
-import { initMobileDefaultCache } from './api/tiantianApi'
-initMobileDefaultCache()
+try {
+  initMobileDefaultCache()
+  logger.info('移动端默认缓存初始化完成')
+} catch (err) {
+  logger.warn('移动端默认缓存初始化失败', err)
+}

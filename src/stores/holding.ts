@@ -15,6 +15,7 @@ import {
 import { fetchFundAccurateData, type FundAccurateData } from '@/api/fundFast'
 import { fetchNetValueHistoryFast } from '@/api/fundFast'
 import { predictTrend, type TrendPrediction } from '@/utils/statistics'
+import { logger } from '@/utils/logger'
 
 /** 持仓项（包含实时估值和收益计算） */
 export interface HoldingWithProfit extends HoldingRecord {
@@ -226,7 +227,7 @@ export const useHoldingStore = defineStore('holding', () => {
         trendPrediction = predictTrend(netValuePoints) ?? undefined
       }
     } catch (error) {
-      console.error('计算趋势预测失败:', error)
+      logger.error('计算趋势预测失败', error)
     }
 
     // [WHAT] 判断是否已更新：根据净值日期判断（QDII 基金允许晚一天更新）

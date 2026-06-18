@@ -101,6 +101,7 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     mode,
     actualTheme,
+    currentTheme: actualTheme,
     setTheme,
     toggleTheme,
     initTheme

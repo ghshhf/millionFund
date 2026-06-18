@@ -12,8 +12,3 @@ export const APP_NAME = 'AI百万实盘'
 
 /** 构建时间（由构建工具注入） */
 export const BUILD_TIME = __BUILD_TIME__ || new Date().toISOString()
-
-// [WHY] 声明全局变量类型，由 Vite 在构建时注入
-declare global {
-  const __BUILD_TIME__: string
-}
