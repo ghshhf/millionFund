@@ -5,6 +5,7 @@
 import { cache, CACHE_TTL } from './cache'
 import { queueGlobalVarScript } from './fundFast'
 import { logger } from '@/utils/logger'
+import { http } from '@/utils/http'
 
 // ========== 交易时间和持久化缓存工具 ==========
 
@@ -444,10 +445,9 @@ export async function fetchHotThemes(): Promise<HotTheme[]> {
   try {
     // [WHAT] 使用 Eastmoney 板块接口
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f2,f3,f4,f12,f14&_=${Date.now()}`
-    
-    const response = await fetch(url)
-    const data = await response.json()
-    
+
+    const data = await http.get<{ data?: { diff?: any[] } }>(url)
+
     if (!data?.data?.diff) return []
     
     const result: HotTheme[] = data.data.diff.map((item: any) => ({
@@ -941,10 +941,9 @@ export async function fetchSectorFunds(): Promise<SectorInfo[]> {
   try {
     // [WHAT] 获取行业板块
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=10&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f2,f3,f4,f12,f14&_=${Date.now()}`
-    
-    const response = await fetch(url)
-    const data = await response.json()
-    
+
+    const data = await http.get<{ data?: { diff?: any[] } }>(url)
+
     if (!data?.data?.diff) return []
     
     const sectors: SectorInfo[] = data.data.diff.slice(0, 6).map((item: any) => {
@@ -986,10 +985,9 @@ export async function fetchETFRank(pageSize = 10): Promise<ETFItem[]> {
   try {
     // [WHAT] 获取ETF排行
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:MK0021,b:MK0022&fields=f2,f3,f4,f12,f14&_=${Date.now()}`
-    
-    const response = await fetch(url)
-    const data = await response.json()
-    
+
+    const data = await http.get<{ data?: { diff?: any[] } }>(url)
+
     if (!data?.data?.diff) return []
     
     const result: ETFItem[] = data.data.diff.map((item: any) => ({
@@ -1013,11 +1011,11 @@ export async function fetchETFRank(pageSize = 10): Promise<ETFItem[]> {
  */
 export async function checkApiAvailability(): Promise<boolean> {
   try {
-    const response = await fetch(
+    await http.get(
       `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&fid=f3&fs=b:MK0021&fields=f12&_=${Date.now()}`,
-      { signal: AbortSignal.timeout(5000) }
+      { timeout: 5000 }
     )
-    return response.ok
+    return true
   } catch {
     return false
   }
@@ -1461,12 +1459,11 @@ export async function fetchFundScale(fundCode: string): Promise<FundScale> {
     // [WHAT] 使用JSONP获取基金基本信息（包含规模）
     const cbName = `scale_cb_${Date.now()}`
     const url = `https://fundgz.1234567.com.cn/js/${fundCode}.js?rt=${Date.now()}`
-    
+
     // [WHAT] 尝试从估值接口获取规模信息
     // 该接口返回的是js变量赋值，不是标准JSONP，需要特殊处理
-    const response = await fetch(url).catch(() => null)
-    if (response) {
-      const text = await response.text()
+    try {
+      const text = await http.text(url)
       // [WHAT] 解析 jsonpgz({...}) 格式
       const match = text.match(/jsonpgz\(([\s\S]*)\)/)
       if (match) {
@@ -1477,8 +1474,10 @@ export async function fetchFundScale(fundCode: string): Promise<FundScale> {
           return defaultScale
         }
       }
+    } catch {
+      // 忽略错误
     }
-    
+
     return defaultScale
   } catch (error) {
     logger.error('[API] 获取基金规模失败', error)
@@ -1528,8 +1527,7 @@ export async function fetchFundStyle(fundCode: string): Promise<FundStyle> {
   try {
     // [WHAT] 从天天基金获取基金风格数据
     const url = `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`
-    const response = await fetch(url)
-    const text = await response.text()
+    const text = await http.text(url)
     
     // [WHAT] 解析资产配置数据
     // 格式：var Data_assetAllocation = {...}
@@ -1630,27 +1628,24 @@ export async function fetchIndexValuations(): Promise<IndexValuation[]> {
   try {
     // [WHAT] 尝试从乐估API获取实时估值数据
     const url = 'https://legulegu.com/api/stockdata/index-valuations'
-    const response = await fetch(url, { mode: 'cors' }).catch(() => null)
-    
-    if (response && response.ok) {
-      const data = await response.json()
-      if (Array.isArray(data) && data.length > 0) {
-        const result = data.map((item: Record<string, unknown>) => ({
-          code: String(item.code || ''),
-          name: String(item.name || ''),
-          pe: Number(item.pe) || 0,
-          pePercentile: Number(item.pe_percentile) || 50,
-          pb: Number(item.pb) || 0,
-          pbPercentile: Number(item.pb_percentile) || 50,
-          dividendYield: Number(item.dividend_yield) || 0,
-          status: getValuationStatus(Number(item.pe_percentile) || 50),
-          updateDate: String(item.date || new Date().toISOString().split('T')[0])
-        }))
-        cache.set(cacheKey, result, CACHE_TTL.LONG)
-        return result
-      }
+    const data = await http.get<any[]>(url).catch(() => null)
+
+    if (data && Array.isArray(data) && data.length > 0) {
+      const result = data.map((item: Record<string, unknown>) => ({
+        code: String(item.code || ''),
+        name: String(item.name || ''),
+        pe: Number(item.pe) || 0,
+        pePercentile: Number(item.pe_percentile) || 50,
+        pb: Number(item.pb) || 0,
+        pbPercentile: Number(item.pb_percentile) || 50,
+        dividendYield: Number(item.dividend_yield) || 0,
+        status: getValuationStatus(Number(item.pe_percentile) || 50),
+        updateDate: String(item.date || new Date().toISOString().split('T')[0])
+      }))
+      cache.set(cacheKey, result, CACHE_TTL.LONG)
+      return result
     }
-    
+
     // [EDGE] API不可用时返回默认数据
     cache.set(cacheKey, defaultData, CACHE_TTL.LONG)
     return defaultData
@@ -1710,8 +1705,7 @@ export async function fetchHolderStructure(fundCode: string): Promise<HolderStru
   try {
     // [WHAT] 从天天基金获取持有人结构
     const url = `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`
-    const response = await fetch(url)
-    const text = await response.text()
+    const text = await http.text(url)
     
     // [WHAT] 解析持有人结构数据
     // 格式：var Data_holderStructure = {...}
@@ -1767,8 +1761,7 @@ export async function fetchFundRankInfo(fundCode: string): Promise<FundRankInfo 
   
   try {
     const url = `https://fund.eastmoney.com/pingzhongdata/${fundCode}.js?v=${Date.now()}`
-    const response = await fetch(url)
-    const text = await response.text()
+    const text = await http.text(url)
     
     // [WHAT] 解析同类排名数据
     // 格式：var Data_rateInSimilarType = [...]

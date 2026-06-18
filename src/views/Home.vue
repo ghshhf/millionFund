@@ -7,13 +7,17 @@ import { useRouter } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
 import { useHoldingStore } from '@/stores/holding'
 import { useNetworkStore } from '@/stores/network'
-import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock, fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
-import { getTradingSession, type TradingSession } from '@/api/tiantianApi'
-import { showConfirmDialog, showToast, ActionSheet } from 'vant'
+import { fetchTopHoldings, type HoldingStock, type MarketIndexSimple, type GlobalIndex } from '@/api/fundFast'
+import { showConfirmDialog, showToast } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import { logger, copyLogsToClipboard, exportLogsAsText } from '@/utils/logger'
+import { useHomeData } from '@/composables/useHomeData'
+import { useActionSheet } from '@/composables/useActionSheet'
 import FundCard from '@/components/FundCard.vue'
 import FundGridItem from '@/components/FundGridItem.vue'
+import QuickActionsBar from '@/components/QuickActionsBar.vue'
+import IntradayChartPopup from '@/components/IntradayChartPopup.vue'
+import TopHoldingsPopup from '@/components/TopHoldingsPopup.vue'
 import riseW from '@/assets/riseW.jpg'
 import downW from '@/assets/downW.jpg'
 
@@ -22,210 +26,38 @@ const fundStore = useFundStore()
 const holdingStore = useHoldingStore()
 const networkStore = useNetworkStore()
 
-const topHoldingsModal = ref<{ open: boolean; fund: any; stocks: HoldingStock[]; loading: boolean }>({
-  open: false,
-  fund: null,
-  stocks: [],
-  loading: false
-})
+// 使用首页数据 hook
+const { indices, globalIndices, tradingSession, currentTime, isRefreshing, loadIndices, loadGlobalIndices, updateTradingSession } = useHomeData()
+
+// 弹窗可见性状态
+const showTopHoldingsPopup = ref(false)
+const topHoldingsFund = ref<{ code: string; name: string } | null>(null)
 
 async function openTopHoldings(fund: any, event: Event) {
   event.stopPropagation()
-  topHoldingsModal.value = { open: true, fund, stocks: [], loading: true }
-  try {
-    const stocks = await fetchTopHoldings(fund.code)
-    topHoldingsModal.value.stocks = stocks
-  } catch (err) {
-    logger.error('获取重仓股失败', err)
-  } finally {
-    topHoldingsModal.value.loading = false
-  }
+  topHoldingsFund.value = { code: fund.code, name: fund.name }
+  showTopHoldingsPopup.value = true
 }
 
-function closeTopHoldings() {
-  topHoldingsModal.value.open = false
-}
+const showIntradayPopup = ref(false)
+const intradayFund = ref<{ code: string; name: string } | null>(null)
 
-// 分时估值弹窗管理
-const intradayModal = ref<{ open: boolean; fund: any; data: IntradayPoint[]; loading: boolean }>({
-  open: false,
-  fund: null,
-  data: [],
-  loading: false
-})
-const intradayCanvasRef = ref<HTMLCanvasElement | null>(null)
-
-function drawIntradayChartOnCanvas(canvas: HTMLCanvasElement, data: IntradayPoint[]) {
-  if (!data || data.length === 0) return
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  // 设置 canvas 尺寸
-  const dpr = window.devicePixelRatio || 1
-  const rect = canvas.getBoundingClientRect()
-  canvas.width = rect.width * dpr
-  canvas.height = rect.height * dpr
-  ctx.scale(dpr, dpr)
-
-  const width = rect.width
-  const height = rect.height
-  const padding = { top: 10, right: 10, bottom: 20, left: 45 }
-  const chartWidth = width - padding.left - padding.right
-  const chartHeight = height - padding.top - padding.bottom
-
-  // 计算数据范围
-  const values = data.map(d => d.value)
-  const minVal = Math.min(...values)
-  const maxVal = Math.max(...values)
-  const startVal = data[0]!.value
-  const endVal = data[data.length - 1]!.value
-  const color = endVal >= startVal ? '#ff4d4f' : '#52c41a'
-
-  // 清空画布
-  ctx.clearRect(0, 0, width, height)
-
-  // 绘制网格线
-  ctx.strokeStyle = 'rgba(128,128,128,0.1)'
-  ctx.lineWidth = 0.5
-  for (let i = 0; i <= 4; i++) {
-    const y = padding.top + (chartHeight / 4) * i
-    ctx.beginPath()
-    ctx.moveTo(padding.left, y)
-    ctx.lineTo(width - padding.right, y)
-    ctx.stroke()
-  }
-
-  // 绘制Y轴标签
-  ctx.fillStyle = '#999'
-  ctx.font = '10px sans-serif'
-  ctx.textAlign = 'right'
-  for (let i = 0; i <= 4; i++) {
-    const val = maxVal - ((maxVal - minVal) / 4) * i
-    const y = padding.top + (chartHeight / 4) * i
-    ctx.fillText(val.toFixed(3), padding.left - 5, y + 3)
-  }
-
-  // 绘制X轴标签（时间）
-  ctx.textAlign = 'center'
-  const timeStep = Math.ceil(data.length / 5)
-  for (let i = 0; i < data.length; i += timeStep) {
-    const x = padding.left + (i / (data.length - 1)) * chartWidth
-    ctx.fillText(data[i]!.time, x, height - 5)
-  }
-
-  // 绘制折线
-  ctx.strokeStyle = color
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  data.forEach((point, index) => {
-    const x = padding.left + (index / (data.length - 1)) * chartWidth
-    const y = padding.top + ((maxVal - point.value) / (maxVal - minVal)) * chartHeight
-    if (index === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  })
-  ctx.stroke()
-
-  // 绘制渐变填充
-  const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom)
-  gradient.addColorStop(0, color + '20')
-  gradient.addColorStop(1, color + '00')
-  ctx.fillStyle = gradient
-  ctx.beginPath()
-  data.forEach((point, index) => {
-    const x = padding.left + (index / (data.length - 1)) * chartWidth
-    const y = padding.top + ((maxVal - point.value) / (maxVal - minVal)) * chartHeight
-    if (index === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  })
-  ctx.lineTo(padding.left + chartWidth, height - padding.bottom)
-  ctx.lineTo(padding.left, height - padding.bottom)
-  ctx.closePath()
-  ctx.fill()
-}
-
-async function openIntradayModal(fund: any, event: Event) {
+function openIntradayModal(fund: any, event: Event) {
   event.stopPropagation()
-  // [WHY] 每次打开弹窗时清空旧数据，强制重新加载最新数据
-  intradayModal.value = { open: true, fund, data: [], loading: true }
-  try {
-    // [WHY] 传入 forceRefresh=true 跳过缓存，确保获取最新分时数据
-    const data = await fetchIntradayData(fund.code, true)
-    if (data && data.length > 0) {
-      intradayModal.value.data = data
-    }
-  } catch (err) {
-    logger.error('获取分时估值失败', err)
-  } finally {
-    intradayModal.value.loading = false
-  }
+  intradayFund.value = { code: fund.code, name: fund.name }
+  showIntradayPopup.value = true
 }
-
-function closeIntradayModal() {
-  intradayModal.value.open = false
-  stopIntradayRetry()
-}
-
-// [WHAT] 保存递归定时器ID，用于组件卸载时清理
-let intradayRetryTimer: number | undefined
-
-// [WHY] 弹窗打开且数据就绪后绘制图表，需要多次尝试确保canvas已渲染
-// [EDGE] 组件卸载或弹窗关闭时必须清除递归定时器，防止访问已卸载的 ref
-function tryDrawIntradayChart(attempts = 0) {
-  // 每次重试前清理上一次的 timer
-  if (intradayRetryTimer) {
-    clearTimeout(intradayRetryTimer)
-    intradayRetryTimer = undefined
-  }
-  if (!intradayCanvasRef.value || !intradayModal.value.data.length) {
-    if (attempts < 10) {
-      intradayRetryTimer = window.setTimeout(() => tryDrawIntradayChart(attempts + 1), 50)
-    }
-    return
-  }
-  drawIntradayChartOnCanvas(intradayCanvasRef.value, intradayModal.value.data)
-}
-
-// [WHAT] 停止分时图的递归重试（弹窗关闭 / 组件卸载时调用）
-function stopIntradayRetry(): void {
-  if (intradayRetryTimer) {
-    clearTimeout(intradayRetryTimer)
-    intradayRetryTimer = undefined
-  }
-}
-
-// 监听弹窗打开，数据准备好后绘制图表
-watch(() => intradayModal.value.open, (open) => {
-  if (open && intradayModal.value.data.length > 0) {
-    nextTick(() => tryDrawIntradayChart())
-  }
-})
-
-// 监听数据变化，弹窗已打开时绘制图表
-watch(() => intradayModal.value.data, (data) => {
-  if (intradayModal.value.open && data.length > 0) {
-    nextTick(() => tryDrawIntradayChart())
-  }
-}, { deep: true })
 
 // 自动刷新开关状态
 const autoRefreshEnabled = ref(true)
 // 自动刷新定时器
 let autoRefreshInterval: number | undefined
-// 交易状态更新定时器
-let tradingSessionInterval: number | undefined
-// [WHY] 数据刷新中状态 - 用于显示加载指示
-const isRefreshing = ref(false)
 // [WHY] 子组件错误捕获 - 防止某只基金数据异常导致整个页面白屏
 const hasError = ref(false)
 const errorMessage = ref('')
 
-// ========== ActionSheet 相关 ==========
-const showActionSheetDialog = ref(false)
-const actionSheetTitle = ref('')
-const actionSheetActions = ref<{ name: string; key: string }[]>([])
-const pendingActionSheetCode = ref('')
-const pendingActionSheetName = ref('')
+// ActionSheet composable
+const actionSheet = useActionSheet()
 
 // [WHAT] 捕获所有子组件的渲染/运行时错误
 onErrorCaptured((err, _instance, info) => {
@@ -254,14 +86,6 @@ watch(autoRefreshEnabled, (newValue) => {
     showToast('自动刷新已关闭')
   }
 })
-
-// [WHAT] 大盘指数
-const indices = ref<MarketIndexSimple[]>([])
-
-// [WHAT] 交易状态
-const tradingSession = ref<TradingSession>('closed')
-// [WHAT] 当前时间，用于实时更新时分秒
-const currentTime = ref(new Date())
 
 // [WHAT] 是否为周末
 const isWeekend = computed(() => {
@@ -302,8 +126,7 @@ const tradingStatus = computed(() => {
   }
 })
 
-// [WHAT] 全球指数
-const globalIndices = ref<GlobalIndex[]>([])
+// [WHAT] 是否显示全球指数面板
 const showGlobalIndices = ref(false)
 
 // [WHAT] 顶部展示指数（上证指数、创业板指、纳斯达克）
@@ -533,13 +356,6 @@ onMounted(async () => {
   fundStore.initWatchlist()
   // 初始化持仓数据
   holdingStore.initHoldings()
-  // 加载大盘指数和全球指数
-  loadIndices()
-  loadGlobalIndices()
-  // 初始化交易状态
-  updateTradingSession()
-  // 每秒更新交易状态，确保秒钟显示准确
-  tradingSessionInterval = window.setInterval(updateTradingSession, 1000)
   // 如果自动刷新默认开启，则启动定时器
   if (autoRefreshEnabled.value) {
     autoRefreshInterval = window.setInterval(refreshData, 60000)
@@ -551,20 +367,7 @@ onUnmounted(() => {
   if (autoRefreshInterval) {
     clearInterval(autoRefreshInterval)
   }
-  // 清除交易状态更新定时器
-  if (tradingSessionInterval) {
-    clearInterval(tradingSessionInterval)
-  }
-  // 清除分时图递归重试定时器
-  stopIntradayRetry()
 })
-
-// [WHAT] 更新交易状态
-function updateTradingSession() {
-  tradingSession.value = getTradingSession()
-  // 更新当前时间，确保时分秒实时跳动
-  currentTime.value = new Date()
-}
 
 // [WHAT] 刷新数据（统一的刷新入口）
 async function refreshData() {
@@ -591,28 +394,6 @@ async function refreshData() {
   }
 }
 
-// [WHAT] 加载大盘指数
-async function loadIndices() {
-  try {
-    logger.debug('loadIndices start')
-    indices.value = await fetchMarketIndicesFast()
-    logger.info('loadIndices ok', { count: indices.value.length })
-  } catch (err) {
-    logger.error('loadIndices failed', err)
-  }
-}
-
-// [WHAT] 加载全球指数
-async function loadGlobalIndices() {
-  try {
-    logger.debug('loadGlobalIndices start')
-    globalIndices.value = await fetchGlobalIndices()
-    logger.info('loadGlobalIndices ok', { count: globalIndices.value.length })
-  } catch (err) {
-    logger.error('loadGlobalIndices failed', err)
-  }
-}
-
 // [WHAT] 删除自选基金
 async function handleDelete(code: string) {
   try {
@@ -630,25 +411,24 @@ async function handleDelete(code: string) {
 // [WHY] 长按基金卡片弹出快捷操作菜单
 // [WHAT] 查看详情 / 加入持仓 / 删除自选
 async function onFundLongPress(code: string, fundName: string) {
-  pendingActionSheetCode.value = code
-  pendingActionSheetName.value = fundName
-  actionSheetTitle.value = `${fundName || '基金'} · 快捷操作`
-  actionSheetActions.value = [
-    { name: '查看详情', key: 'detail' },
-    { name: '加入持仓', key: 'holding' },
-    { name: '删除自选', key: 'delete' }
-  ]
-  showActionSheetDialog.value = true
+  actionSheet.open({
+    title: `${fundName || '基金'} · 快捷操作`,
+    actions: [
+      { name: '查看详情', key: 'detail' },
+      { name: '加入持仓', key: 'holding' },
+      { name: '删除自选', key: 'delete' }
+    ],
+    context: { code, fundName }
+  })
 }
 
 function onActionSheetSelect(index: number) {
-  const action = actionSheetActions.value[index]
-  const code = pendingActionSheetCode.value
-  const fundName = pendingActionSheetName.value
+  const result = actionSheet.onSelect(index)
+  if (!result) return
   
-  if (!action || !code) return
-  
-  showActionSheetDialog.value = false
+  const { action, context } = result
+  const code = context.code as string
+  const fundName = context.fundName as string
   
   if (action.key === 'detail') {
     router.push(`/detail/${code}`)
@@ -756,24 +536,12 @@ function goToDetail(code: string) {
           </div>
         </div>
       </div>
-      <div class="header-right">
-        <!-- 网页端：显示设置按钮 -->
-        <div class="web-only">
-          <div class="auto-refresh-label">
-            <span>{{ autoRefreshEnabled ? '自动刷新开' : '自动刷新关' }}</span>
-          </div>
-          <van-switch v-model="autoRefreshEnabled" size="20" />
-          <van-icon name="replay" size="22" @click="refreshData" />
-          <van-icon name="description-o" size="22" @click="onCopyLogs" title="复制日志" />
-          <van-icon name="setting-o" size="22" @click="router.push('/alerts')" />
-        </div>
-        <!-- 移动端：只显示自动刷新开关和刷新按钮 -->
-        <div class="mobile-only">
-          <van-switch v-model="autoRefreshEnabled" size="20" />
-          <van-icon name="replay" size="22" @click="refreshData" />
-          <van-icon name="description-o" size="22" @click="onCopyLogs" />
-        </div>
-      </div>
+      <QuickActionsBar
+        v-model:auto-refresh-enabled="autoRefreshEnabled"
+        @refresh="refreshData"
+        @copy-logs="onCopyLogs"
+        @go-to-settings="router.push('/alerts')"
+      />
     </div>
     
 
@@ -1111,98 +879,23 @@ function goToDetail(code: string) {
     </van-pull-refresh>
 
     <!-- 前10大重仓股弹窗 -->
-    <van-popup 
-      v-model:show="topHoldingsModal.open" 
-      position="center" 
-      round 
-      :style="{ width: '88%', maxWidth: '420px', background: 'var(--bg-secondary)' }"
-    >
-      <div class="top-holdings-popup">
-        <div class="top-holdings-header">
-          <div class="top-holdings-title-row">
-            <span class="top-holdings-icon">📈</span>
-            <span class="top-holdings-title">前10重仓股票</span>
-          </div>
-        </div>
-        <div class="top-holdings-fund-info">
-          <span class="top-holdings-fund-name">{{ topHoldingsModal.fund?.name }}</span>
-          <span class="top-holdings-fund-code">#{{ topHoldingsModal.fund?.code }}</span>
-        </div>
-        <div class="top-holdings-grid" v-if="!topHoldingsModal.loading">
-          <div 
-            v-for="(stock, idx) in topHoldingsModal.stocks" 
-            :key="stock.code || idx" 
-            class="top-holdings-card"
-          >
-            <span class="thc-name">{{ stock.name }}</span>
-            <div class="thc-bottom">
-              <span 
-                v-if="stock.change !== null" 
-                class="thc-change" 
-                :class="stock.change > 0 ? 'up' : stock.change < 0 ? 'down' : ''"
-              >
-                {{ stock.change > 0 ? '+' : '' }}{{ stock.change.toFixed(2) }}%
-              </span>
-              <span v-else class="thc-change">--</span>
-              <span class="thc-weight">{{ stock.weight }}</span>
-            </div>
-          </div>
-          <div v-if="topHoldingsModal.stocks.length === 0" class="top-holdings-empty">
-            暂无重仓股数据
-          </div>
-        </div>
-        <div class="top-holdings-loading" v-else>
-          <van-loading size="24px">加载中...</van-loading>
-        </div>
-        <button class="top-holdings-close-btn" @click="topHoldingsModal.open = false">关闭</button>
-      </div>
-    </van-popup>
+    <TopHoldingsPopup
+      v-model:show="showTopHoldingsPopup"
+      :fund="topHoldingsFund"
+    />
 
     <!-- 当日分时估值弹窗 -->
-    <van-popup 
-      v-model:show="intradayModal.open" 
-      position="center" 
-      round 
-      :style="{ width: '92%', maxWidth: '480px', background: 'var(--bg-secondary)' }"
-    >
-      <div class="intraday-popup">
-        <div class="intraday-popup-header">
-          <div class="intraday-popup-title-row">
-            <van-icon name="chart-trending-o" size="20" class="intraday-popup-icon" />
-            <span class="intraday-popup-title">当日分时估值</span>
-          </div>
-        </div>
-        <div class="intraday-popup-fund-info">
-          <span class="intraday-popup-fund-name">{{ intradayModal.fund?.name }}</span>
-          <span class="intraday-popup-fund-code">#{{ intradayModal.fund?.code }}</span>
-        </div>
-        <div class="intraday-popup-chart" v-if="!intradayModal.loading">
-          <div v-if="intradayModal.data && intradayModal.data.length > 0" class="intraday-popup-chart-wrapper">
-            <div class="intraday-popup-summary">
-              <span class="intraday-popup-latest" :class="intradayModal.data[intradayModal.data.length - 1]!.growth >= 0 ? 'up' : 'down'">
-                {{ intradayModal.data[intradayModal.data.length - 1]!.value }}
-                ({{ intradayModal.data[intradayModal.data.length - 1]!.growth >= 0 ? '+' : '' }}{{ intradayModal.data[intradayModal.data.length - 1]!.growth }}%)
-              </span>
-              <span class="intraday-popup-time">{{ intradayModal.data[intradayModal.data.length - 1]!.time }}</span>
-            </div>
-            <canvas ref="intradayCanvasRef" class="intraday-popup-canvas"></canvas>
-          </div>
-          <div v-else class="intraday-popup-empty">
-            暂无估值数据
-          </div>
-        </div>
-        <div class="intraday-popup-loading" v-else>
-          <van-loading size="24px">加载中...</van-loading>
-        </div>
-        <button class="intraday-popup-close-btn" @click="closeIntradayModal">关闭</button>
-      </div>
-    </van-popup>
+    <IntradayChartPopup
+      v-model:show="showIntradayPopup"
+      :fund="intradayFund"
+    />
 
     <!-- ActionSheet 快捷操作菜单 -->
     <van-action-sheet
-      v-model:show="showActionSheetDialog"
-      :title="actionSheetTitle"
-      :actions="actionSheetActions"
+      :show="actionSheet.show.value"
+      :title="actionSheet.title.value"
+      :actions="actionSheet.actions.value"
+      @update:show="actionSheet.show.value = $event"
       @select="onActionSheetSelect"
     />
   </div>
