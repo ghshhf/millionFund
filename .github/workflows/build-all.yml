@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags:
       - 'v*'
+      - 'V*'
   workflow_dispatch:
 
 permissions:
