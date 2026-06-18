@@ -3,6 +3,7 @@
 // [DEPS] 依赖 tesseract.js 库
 
 import Tesseract from 'tesseract.js'
+import { logger } from './logger'
 
 /**
  * 识别结果中的持仓项
@@ -60,7 +61,7 @@ export async function recognizeText(
       ;(globalThis as any).__lastOcrData = result.data
       return result.data.text
     } catch (err) {
-      console.warn('Tesseract chi_sim+eng 识别失败，降级到 eng：', err)
+      logger.warn('Tesseract chi_sim+eng 识别失败，降级到 eng', err)
       const result2 = await (Tesseract as any).recognize(imageSource, 'eng', { logger: makeLogger() })
       ;(globalThis as any).__lastOcrData = result2.data
       return result2.data.text

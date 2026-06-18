@@ -13,6 +13,7 @@ import {
   removeFromWatchlist as removeFromStorage,
   isInWatchlist
 } from '@/utils/storage'
+import { logger } from '@/utils/logger'
 
 export const useFundStore = defineStore('fund', () => {
   // ========== State ==========
@@ -152,7 +153,7 @@ export const useFundStore = defineStore('fund', () => {
       const data = await fetchFundEstimateFast(code)
       updateFundData(code, data)
     } catch (err) {
-      console.error('刷新基金估值失败:', code, err)
+      logger.error('刷新基金估值失败', { code, error: err })
     }
   }
 

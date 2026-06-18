@@ -201,3 +201,45 @@ jobs:
           name: AI百万实盘 ${{ github.ref_name }}
           generate_release_notes: true
           files: release-assets/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ───────────────────── 每次 push main 发布开发版 ─────────────────
+  release-dev:
+    name: 📦 发布开发版到 GitHub Releases
+    needs: [build-web, build-android, build-windows, build-macos, build-linux]
+    if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: 列出下载的产物
+        run: ls -lhR release-assets/
+
+      - name: 删除旧的开发版 Release
+        uses: dev-drprasad/delete-older-releases@v1.2
+        with:
+          keep_latest: 0
+          delete_tag_pattern: 'dev-*'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建开发版 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-${{ github.sha }}
+          name: AI百万实盘 开发版 (${{ github.sha }})
+          body: |
+            🔧 开发版本 - 基于最新代码构建
+
+            构建时间: ${{ github.event.head_commit.timestamp }}
+            提交信息: ${{ github.event.head_commit.message }}
+
+            💡 建议使用正式版 (v* 标签) 用于日常使用
+          prerelease: true
+          files: release-assets/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

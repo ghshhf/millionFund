@@ -4,6 +4,7 @@
 
 import { cache, CACHE_TTL } from './cache'
 import { queueGlobalVarScript } from './fundFast'
+import { logger } from '@/utils/logger'
 
 // ========== 交易时间和持久化缓存工具 ==========
 
@@ -1262,7 +1263,7 @@ export async function fetchDividendRecords(fundCode: string): Promise<DividendRe
     cache.set(cacheKey, records, CACHE_TTL.LONG)
     return records
   } catch (error) {
-    console.error('[API] 获取分红记录失败:', error)
+    logger.error('[API] 获取分红记录失败', error)
     return []
   }
 }
@@ -1480,7 +1481,7 @@ export async function fetchFundScale(fundCode: string): Promise<FundScale> {
     
     return defaultScale
   } catch (error) {
-    console.error('[API] 获取基金规模失败:', error)
+    logger.error('[API] 获取基金规模失败', error)
     return defaultScale
   }
 }
@@ -1577,7 +1578,7 @@ export async function fetchFundStyle(fundCode: string): Promise<FundStyle> {
     cache.set(cacheKey, defaultStyle, CACHE_TTL.LONG)
     return defaultStyle
   } catch (error) {
-    console.error('[API] 获取基金风格失败:', error)
+    logger.error('[API] 获取基金风格失败', error)
     return defaultStyle
   }
 }
@@ -1654,7 +1655,7 @@ export async function fetchIndexValuations(): Promise<IndexValuation[]> {
     cache.set(cacheKey, defaultData, CACHE_TTL.LONG)
     return defaultData
   } catch (error) {
-    console.error('[API] 获取指数估值失败:', error)
+    logger.error('[API] 获取指数估值失败', error)
     return defaultData
   }
 }
@@ -1730,7 +1731,7 @@ export async function fetchHolderStructure(fundCode: string): Promise<HolderStru
     cache.set(cacheKey, defaultData, CACHE_TTL.LONG)
     return defaultData
   } catch (error) {
-    console.error('[API] 获取持有人结构失败:', error)
+    logger.error('[API] 获取持有人结构失败', error)
     return defaultData
   }
 }
@@ -1796,7 +1797,7 @@ export async function fetchFundRankInfo(fundCode: string): Promise<FundRankInfo 
     cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
     return result
   } catch (error) {
-    console.error('[API] 获取基金排名失败:', error)
+    logger.error('[API] 获取基金排名失败', error)
     return null
   }
 }

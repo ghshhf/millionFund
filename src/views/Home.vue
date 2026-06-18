@@ -9,8 +9,9 @@ import { useHoldingStore } from '@/stores/holding'
 import { useNetworkStore } from '@/stores/network'
 import { fetchMarketIndicesFast, fetchGlobalIndices, type MarketIndexSimple, type GlobalIndex, fetchTopHoldings, type HoldingStock, fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
 import { getTradingSession, type TradingSession } from '@/api/tiantianApi'
-import { showConfirmDialog, showToast, showActionSheet } from 'vant'
+import { showConfirmDialog, showToast, ActionSheet } from 'vant'
 import { getSourceLabel } from '@/config/sources'
+import { logger, copyLogsToClipboard, exportLogsAsText } from '@/utils/logger'
 import FundCard from '@/components/FundCard.vue'
 import FundGridItem from '@/components/FundGridItem.vue'
 import riseW from '@/assets/riseW.jpg'
@@ -35,7 +36,7 @@ async function openTopHoldings(fund: any, event: Event) {
     const stocks = await fetchTopHoldings(fund.code)
     topHoldingsModal.value.stocks = stocks
   } catch (err) {
-    console.error('获取重仓股失败:', err)
+    logger.error('获取重仓股失败', err)
   } finally {
     topHoldingsModal.value.loading = false
   }
@@ -154,7 +155,7 @@ async function openIntradayModal(fund: any, event: Event) {
       intradayModal.value.data = data
     }
   } catch (err) {
-    console.error('获取分时估值失败:', err)
+    logger.error('获取分时估值失败', err)
   } finally {
     intradayModal.value.loading = false
   }
@@ -219,9 +220,19 @@ const isRefreshing = ref(false)
 const hasError = ref(false)
 const errorMessage = ref('')
 
+// ========== ActionSheet 相关 ==========
+const showActionSheetDialog = ref(false)
+const actionSheetTitle = ref('')
+const actionSheetActions = ref<{ name: string; key: string }[]>([])
+const pendingActionSheetCode = ref('')
+const pendingActionSheetName = ref('')
+
 // [WHAT] 捕获所有子组件的渲染/运行时错误
-onErrorCaptured((err, instance, info) => {
-  console.error('[Home.vue] 组件错误:', err, info)
+onErrorCaptured((err, _instance, info) => {
+  logger.error('[Home.vue] 组件错误', {
+    error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+    info,
+  })
   hasError.value = true
   errorMessage.value = err instanceof Error ? err.message : String(err)
   // 返回 false 让错误继续冒泡到上层
@@ -503,8 +514,22 @@ watch(
   }
 )
 
+// [WHAT] 一键复制日志 - 方便用户反馈问题时粘贴运行记录
+async function onCopyLogs(): Promise<void> {
+  const ok = await copyLogsToClipboard()
+  if (ok) {
+    showToast(`日志已复制 (${logger.getAll().length}条, v${logger.getVersion()})`)
+  } else {
+    showToast('复制失败，请手动复制:\n\n' + exportLogsAsText())
+  }
+}
+
 // [WHAT] 页面挂载时初始化数据
 onMounted(async () => {
+  logger.info('Home mounted', {
+    watchlist: fundStore.watchlist?.length || 0,
+    online: networkStore.isOnline,
+  })
   fundStore.initWatchlist()
   // 初始化持仓数据
   holdingStore.initHoldings()
@@ -545,14 +570,21 @@ function updateTradingSession() {
 async function refreshData() {
   if (isRefreshing.value) return
   isRefreshing.value = true
+  logger.info('refreshData start')
   try {
     await Promise.all([
       loadIndices(),
       loadGlobalIndices(),
       holdingStore.refreshEstimates()
     ])
+    logger.info('refreshData ok', {
+      indicesCount: indices.value.length,
+      globalCount: globalIndices.value.length,
+      holdingsCount: holdingStore.holdings?.length || 0,
+    })
     showToast('刷新成功')
-  } catch {
+  } catch (err) {
+    logger.error('refreshData failed', err)
     showToast('刷新失败，请重试')
   } finally {
     isRefreshing.value = false
@@ -562,18 +594,22 @@ async function refreshData() {
 // [WHAT] 加载大盘指数
 async function loadIndices() {
   try {
+    logger.debug('loadIndices start')
     indices.value = await fetchMarketIndicesFast()
+    logger.info('loadIndices ok', { count: indices.value.length })
   } catch (err) {
-    console.error('获取大盘指数失败:', err)
+    logger.error('loadIndices failed', err)
   }
 }
 
 // [WHAT] 加载全球指数
 async function loadGlobalIndices() {
   try {
+    logger.debug('loadGlobalIndices start')
     globalIndices.value = await fetchGlobalIndices()
+    logger.info('loadGlobalIndices ok', { count: globalIndices.value.length })
   } catch (err) {
-    console.error('获取全球指数失败:', err)
+    logger.error('loadGlobalIndices failed', err)
   }
 }
 
@@ -594,42 +630,48 @@ async function handleDelete(code: string) {
 // [WHY] 长按基金卡片弹出快捷操作菜单
 // [WHAT] 查看详情 / 加入持仓 / 删除自选
 async function onFundLongPress(code: string, fundName: string) {
-  try {
-    const actions = [
-      { name: '查看详情', key: 'detail' },
-      { name: '加入持仓', key: 'holding' },
-      { name: '删除自选', key: 'delete' }
-    ]
-    const result = await showActionSheet({
-      title: `${fundName || '基金'} · 快捷操作`,
-      actions: actions.map(a => ({ name: a.name }))
-    })
-    const selected = (result as { index: number }).index
-    if (selected === 0) {
-      router.push(`/detail/${code}`)
-    } else if (selected === 1) {
-      const existing = holdingStore.holdings.find(h => h.code === code)
-      if (existing) {
-        showToast('持仓中已存在该基金')
-      } else {
-        holdingStore.addOrUpdateHolding({
-          code: code,
-          name: fundName,
-          buyNetValue: 0,
-          shares: 0,
-          buyDate: '',
-          holdingDays: 0,
-          source: '手动',
-          isQDII: false,
-          createdAt: Date.now()
-        })
-        showToast('已加入持仓，请补充买入信息')
-      }
-    } else if (selected === 2) {
-      handleDelete(code)
+  pendingActionSheetCode.value = code
+  pendingActionSheetName.value = fundName
+  actionSheetTitle.value = `${fundName || '基金'} · 快捷操作`
+  actionSheetActions.value = [
+    { name: '查看详情', key: 'detail' },
+    { name: '加入持仓', key: 'holding' },
+    { name: '删除自选', key: 'delete' }
+  ]
+  showActionSheetDialog.value = true
+}
+
+function onActionSheetSelect(index: number) {
+  const action = actionSheetActions.value[index]
+  const code = pendingActionSheetCode.value
+  const fundName = pendingActionSheetName.value
+  
+  if (!action || !code) return
+  
+  showActionSheetDialog.value = false
+  
+  if (action.key === 'detail') {
+    router.push(`/detail/${code}`)
+  } else if (action.key === 'holding') {
+    const existing = holdingStore.holdings.find(h => h.code === code)
+    if (existing) {
+      showToast('持仓中已存在该基金')
+    } else {
+      holdingStore.addOrUpdateHolding({
+        code: code,
+        name: fundName || '',
+        buyNetValue: 0,
+        shares: 0,
+        buyDate: '',
+        holdingDays: 0,
+        source: '手动',
+        isQDII: false,
+        createdAt: Date.now()
+      })
+      showToast('已加入持仓，请补充买入信息')
     }
-  } catch {
-    // 用户取消
+  } else if (action.key === 'delete') {
+    handleDelete(code)
   }
 }
 
@@ -722,12 +764,14 @@ function goToDetail(code: string) {
           </div>
           <van-switch v-model="autoRefreshEnabled" size="20" />
           <van-icon name="replay" size="22" @click="refreshData" />
+          <van-icon name="description-o" size="22" @click="onCopyLogs" title="复制日志" />
           <van-icon name="setting-o" size="22" @click="router.push('/alerts')" />
         </div>
         <!-- 移动端：只显示自动刷新开关和刷新按钮 -->
         <div class="mobile-only">
           <van-switch v-model="autoRefreshEnabled" size="20" />
           <van-icon name="replay" size="22" @click="refreshData" />
+          <van-icon name="description-o" size="22" @click="onCopyLogs" />
         </div>
       </div>
     </div>
@@ -746,7 +790,7 @@ function goToDetail(code: string) {
         <div class="error-icon">⚠️</div>
         <div class="error-title">页面加载出现问题</div>
         <div class="error-detail">{{ errorMessage || '部分数据暂时无法加载' }}</div>
-        <van-button round type="primary" @click="() => { hasError.value = false; refreshData(); }">
+        <van-button round type="primary" @click="() => { hasError = false; refreshData(); }">
           点击重试
         </van-button>
       </div>
@@ -1153,6 +1197,14 @@ function goToDetail(code: string) {
         <button class="intraday-popup-close-btn" @click="closeIntradayModal">关闭</button>
       </div>
     </van-popup>
+
+    <!-- ActionSheet 快捷操作菜单 -->
+    <van-action-sheet
+      v-model:show="showActionSheetDialog"
+      :title="actionSheetTitle"
+      :actions="actionSheetActions"
+      @select="onActionSheetSelect"
+    />
   </div>
 </template>
 

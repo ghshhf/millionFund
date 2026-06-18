@@ -40,6 +40,12 @@ const router = createRouter({
       meta: { title: 'AI追踪' }
     },
     {
+      path: '/news',
+      name: 'news',
+      component: () => import('@/views/News.vue'),
+      meta: { title: '财经资讯' }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }

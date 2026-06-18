@@ -3,6 +3,8 @@
 //        导致先注册那一方的请求永远得不到响应。本模块提供共享回调 + 多 handler 分发。
 // [HOW] 两个 API 模块分别注册自己的 handler，window.jsonpgz 只注册一次，响应分发给所有 handler。
 
+import { logger } from '@/utils/logger'
+
 type JsonpHandler = (data: any) => void
 
 const handlers = new Set<JsonpHandler>()
@@ -28,7 +30,7 @@ export function initJsonpCallback() {
       try {
         handler(data)
       } catch (e) {
-        console.error('[jsonp] handler error:', e)
+        logger.error('[jsonp] handler error', e)
       }
     }
   }

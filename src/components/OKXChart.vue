@@ -5,6 +5,7 @@
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { fetchSimpleKLineData, calculatePeriodReturns, clearFundCache, fetchHS300History, type SimpleKLineData, type PeriodReturn } from '@/api/fundFast'
+import { logger } from '@/utils/logger'
 import { useThemeStore } from '@/stores/theme'
 import { isTradingTime } from '@/api/tiantianApi'
 
@@ -376,7 +377,7 @@ async function loadData() {
     await nextTick()
     drawChart()
   } catch (err) {
-    console.error('加载图表数据失败:', err)
+    logger.error('加载图表数据失败', err)
   } finally {
     isLoading.value = false
   }
