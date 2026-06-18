@@ -7,6 +7,7 @@ import { persistCache } from './tiantianApi'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 import { logger } from '@/utils/logger'
+import { http } from '@/utils/http'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
@@ -298,11 +299,9 @@ export async function fetchFundList(): Promise<FundInfo[]> {
 
   for (const path of paths) {
     try {
-      const response = await fetch(path)
-      if (!response.ok) continue
-      const data = await response.json()
+      const data = await http.get<FundInfo[]>(path)
       if (Array.isArray(data) && data.length > 0) {
-        _fundListCache = data as FundInfo[]
+        _fundListCache = data
         return _fundListCache
       }
     } catch (e) {
@@ -575,13 +574,10 @@ export async function fetchIntradayData(code: string, forceRefresh = false): Pro
   try {
     // [WHY] 添加时间戳避免浏览器缓存，确保获取最新数据
     const url = `https://web.ifzq.gtimg.cn/fund/newfund/fundSsgz/getSsgz?app=web&symbol=jj${code}&_=${Date.now()}`
-    const response = await fetch(url)
-    if (!response.ok) return null
-
-    const result = await response.json()
+    const result = await http.get<{ code: number; data?: { data?: any[]; yesterdayDwjz?: string } }>(url)
     if (result.code === 0 && result.data && Array.isArray(result.data.data)) {
       const { data: list, yesterdayDwjz } = result.data
-      const yDwjz = parseFloat(yesterdayDwjz)
+      const yDwjz = parseFloat(yesterdayDwjz || '0')
       if (!yDwjz) return null
 
       const points = list.map((item: any[]) => {
@@ -1219,8 +1215,7 @@ export async function fetchMarketIndicesFast(): Promise<MarketIndexSimple[]> {
   try {
     // [WHAT] 添加沪深300指数 (1.000300)
     const url = 'https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001,0.399006,1.000300&fields=f2,f3,f4,f12,f14'
-    const response = await fetch(url)
-    const data = await response.json()
+    const data = await http.get<{ data?: { diff?: any[] } }>(url)
 
     if (!data?.data?.diff) return []
 
@@ -1334,8 +1329,7 @@ export async function fetchFundRankingFast(
     // [WHY] 使用push2接口获取场内基金排行（ETF/LOF等）
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=${order}&np=1&fltt=2&invt=2&fid=f3&fs=b:MK0021&fields=f2,f3,f4,f12,f14&_=${Date.now()}`
 
-    const response = await fetch(url)
-    const data = await response.json()
+    const data = await http.get<{ data?: { diff?: any[] } }>(url)
 
     if (!data?.data?.diff) return []
 

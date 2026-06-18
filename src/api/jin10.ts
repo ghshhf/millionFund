@@ -3,6 +3,7 @@
 // [DEPS] 依赖 apiEndpoints 配置和 cache 工具
 
 import { getCache, setCache } from '@/utils/cache'
+import { http } from '@/utils/http'
 
 const CACHE_TTL = {
   NEWS: 60,
@@ -71,8 +72,7 @@ export async function fetchNewsList(page = 1, pageSize = 20, category = 'all'): 
       type: category === 'all' ? '' : category,
     })
 
-    const response = await fetch(`${url}?${params}`)
-    const data = await response.json()
+    const data = await http.get<{ data: any[] }>(`${url}?${params}`)
 
     if (data && Array.isArray(data.data)) {
       const newsList: NewsItem[] = data.data.map((item: any) => ({
@@ -105,8 +105,7 @@ export async function fetchFlashNews(): Promise<FlashItem[]> {
       limit: '20',
     })
 
-    const response = await fetch(`${url}?${params}`)
-    const data = await response.json()
+    const data = await http.get<{ data: any[] }>(`${url}?${params}`)
 
     if (data && Array.isArray(data.data)) {
       const flashList: FlashItem[] = data.data.map((item: any) => ({
@@ -137,8 +136,7 @@ export async function fetchEconomicCalendar(date?: string): Promise<CalendarItem
       date: targetDate!,
     })
 
-    const response = await fetch(`${url}?${params}`)
-    const data = await response.json()
+    const data = await http.get<{ data: any[] }>(`${url}?${params}`)
 
     if (data && Array.isArray(data.data)) {
       const calendarList: CalendarItem[] = data.data.map((item: any) => ({

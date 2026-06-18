@@ -161,16 +161,6 @@ const filteredData = computed(() => {
   // [WHY] 先按时间排序，再过滤指定天数范围
   const rawData = [...chartData.value]
   
-  // [WHAT] 调试信息：使用 error 级别确保输出到 logcat
-  const debugInfo = {
-    period: currentPeriod,
-    rawLength: rawData.length,
-    firstTime: rawData[0]?.time,
-    lastTime: rawData[rawData.length - 1]?.time,
-    today
-  }
-  // console.error('[图表检查] 原始数据:', JSON.stringify(debugInfo))
-  
   let data = rawData
     .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
     .filter(item => new Date(item.time) >= startDate)
@@ -179,28 +169,9 @@ const filteredData = computed(() => {
       volume: 50 + Math.abs(item.change) * 30 + (i % 5) * 10
     }))
   
-  // const debugInfo2 = {
-  //   filteredLength: data.length,
-  //   firstTime: data[0]?.time,
-  //   lastTime: data[data.length - 1]?.time
-  // }
-  // console.error('[图表检查] 过滤后:', JSON.stringify(debugInfo2))
-  
   // [WHY] 实时更新当日 K 线数据点（只要有实时估值数据就更新，不限于交易时间）
   // [NOTE] QDII基金和A股交易时间不同，收盘后也可能有估值数据
   const shouldUpdateToday = props.realtimeValue > 0
-  
-  // const debugInfo3 = {
-  //   period: currentPeriod,
-  //   dataLength: data.length,
-  //   lastItemTime: data.length > 0 ? data[data.length - 1]!.time : 'none',
-  //   today,
-  //   realtimeValue: props.realtimeValue,
-  //   realtimeChange: props.realtimeChange,
-  //   isTradingTime: isTradingTime(),
-  //   shouldUpdateToday
-  // }
-  // console.error('[图表检查] K 线模式:', JSON.stringify(debugInfo3))
   
   if (shouldUpdateToday && data.length > 0) {
     const lastIndex = data.length - 1
