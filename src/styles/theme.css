@@ -75,6 +75,15 @@
   /* 字体 */
   --font-mono: 'SF Mono', 'Monaco', 'Consolas', monospace;
   --font-number: 'DIN Alternate', 'Roboto Mono', var(--font-mono);
+
+  /* ========== 旧命名别名（兼容遗留组件） ========== */
+  --up-color: var(--color-up);
+  --down-color: var(--color-down);
+  --bg-card: var(--bg-secondary);
+  --primary-color: var(--color-primary);
+  --primary-color-rgb: 255, 193, 7;
+  --gradient-start: var(--color-primary);
+  --gradient-end: #ffca28;
 }
 
 /* ========== 浅色主题 ========== */
@@ -130,6 +139,15 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
   --shadow-glow-up: 0 0 20px rgba(207, 34, 46, 0.15);
   --shadow-glow-down: 0 0 20px rgba(26, 127, 55, 0.15);
+
+  /* ========== 旧命名别名（兼容遗留组件） ========== */
+  --up-color: var(--color-up);
+  --down-color: var(--color-down);
+  --bg-card: var(--bg-secondary);
+  --primary-color: var(--color-primary);
+  --primary-color-rgb: 217, 119, 6;
+  --gradient-start: var(--color-primary);
+  --gradient-end: #b45309;
 }
 
 /* ========== 全局样式应用 ========== */

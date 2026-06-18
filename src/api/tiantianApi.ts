@@ -14,38 +14,111 @@ import { http } from '@/utils/http'
  */
 export type TradingSession = 'morning' | 'noon_break' | 'afternoon' | 'closed' | 'weekend' | 'holiday' | 'pre_market' | 'post_market'
 
+// ========== 节假日动态获取（替代硬编码） ==========
+
 /**
- * [WHY] A股法定节假日休市（含调休后的工作日补休）
- *        仅保留近一年 + 近一年的日期，后续每年手动更新即可
+ * [WHY] A股法定节假日每年不同（含调休），硬编码需每年手动更新。
+ * [HOW] 优先从免费节假日 API 获取，失败时使用小兜底集降级。
+ *       API 数据在后台异步刷新，不阻塞 getTradingSession() 的同步调用。
  */
-const CHINA_STOCK_HOLIDAYS_2025_2026: Set<string> = new Set([
-  // 2025 春节 1月28日-2月4日
-  '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31',
-  '2025-02-03', '2025-02-04',
-  // 2025 清明节 4月4日-4月7日
-  '2025-04-04', '2025-04-07',
-  // 2025 劳动节 5月1日-5月5日
-  '2025-05-01', '2025-05-02', '2025-05-05',
-  // 2025 端午节 5月30日-6月2日
-  '2025-05-30', '2025-06-02',
-  // 2025 中秋节国庆节 10月1日-10月8日
-  '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-06', '2025-10-07', '2025-10-08',
-  // 2026 元旦 1月1日-1月3日
-  '2026-01-01', '2026-01-02', '2026-01-03',
-  // 2026 春节 2月16日-2月24日
-  '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
-  '2026-02-23', '2026-02-24',
-  // 2026 清明节 4月4日-4月6日
-  '2026-04-06',
-  // 2026 劳动节 5月1日-5月5日
-  '2026-05-01', '2026-05-04', '2026-05-05',
-  // 2026 端午节 6月19日-6月22日
-  '2026-06-19', '2026-06-22',
-  // 2026 中秋节 10月5日-10月6日
-  '2026-10-05', '2026-10-06',
-  // 2026 国庆节 10月1日-10月8日
-  '2026-10-01', '2026-10-02', '2026-10-07', '2026-10-08',
-])
+
+/** 硬编码兜底：仅用于首次启动 / API 不可用时的降级 */
+const FALLBACK_HOLIDAYS: Record<string, string[]> = {
+  '2025': [
+    '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-03', '2025-02-04',
+    '2025-04-04', '2025-04-07',
+    '2025-05-01', '2025-05-02', '2025-05-05',
+    '2025-05-30', '2025-06-02',
+    '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-06', '2025-10-07', '2025-10-08',
+  ],
+  '2026': [
+    '2026-01-01', '2026-01-02', '2026-01-03',
+    '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', '2026-02-23', '2026-02-24',
+    '2026-04-06',
+    '2026-05-01', '2026-05-04', '2026-05-05',
+    '2026-06-19', '2026-06-22',
+    '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08',
+  ],
+}
+
+/** 运行时节假日集合 */
+let holidaySet = new Set<string>()
+let holidayInitialized = false
+
+/** 从兜底数据初始化 */
+function initFallbackHolidays(): void {
+  const thisYear = String(new Date().getFullYear())
+  const nextYear = String(new Date().getFullYear() + 1)
+  const years = [thisYear, nextYear]
+  for (const year of years) {
+    FALLBACK_HOLIDAYS[year]?.forEach(d => holidaySet.add(d))
+  }
+  logger.info(`[holiday] 兜底数据加载完成: ${years.join(', ')}`)
+}
+
+/**
+ * 从 timor.tech API 获取指定年份的节假日数据
+ * [WHY] 免费公开 API，返回结构化节假日数据（含调休安排）
+ */
+async function fetchYearHolidaysFromApi(year: number): Promise<void> {
+  const cacheKey = `holiday_year_${year}`
+  const cached = cache.get<string[]>(cacheKey)
+  if (cached) {
+    cached.forEach(d => holidaySet.add(d))
+    logger.info(`[holiday] 缓存命中 ${year} 年`)
+    return
+  }
+
+  try {
+    const data = await http.json<{
+      code: number
+      holiday?: Record<string, { holiday: boolean; name: string; date: string }>
+    }>(`https://timor.tech/api/holiday/year/${year}`)
+
+    if (data?.code !== 0 || !data?.holiday) {
+      logger.warn(`[holiday] API 返回异常 ${year}`, data)
+      return
+    }
+
+    const holidayDates: string[] = []
+    for (const [dateStr, info] of Object.entries(data.holiday)) {
+      if (info.holiday) {
+        holidaySet.add(dateStr)
+        holidayDates.push(dateStr)
+      }
+    }
+    // 缓存 24 小时（节假日不会每天变化）
+    cache.set(cacheKey, holidayDates, 86400000)
+    logger.info(`[holiday] API 获取 ${year} 年成功`, { count: holidayDates.length })
+  } catch (err) {
+    logger.warn(`[holiday] API 获取 ${year} 年失败，使用兜底数据`, err)
+  }
+}
+
+/**
+ * 初始化节假日数据
+ * [WHY] 优先从 API 获取，失败时使用硬编码兜底
+ * [WHEN] 在 app 启动时调用（fire-and-forget，不阻塞 UI）
+ */
+export async function initHolidayData(): Promise<void> {
+  if (holidayInitialized) return
+  holidayInitialized = true
+
+  // 1) 先用兜底数据确保立即可用
+  initFallbackHolidays()
+
+  // 2) 从 API 获取当年 + 明年数据（覆盖兜底）
+  const thisYear = new Date().getFullYear()
+  await Promise.all([
+    fetchYearHolidaysFromApi(thisYear),
+    fetchYearHolidaysFromApi(thisYear + 1),
+  ])
+}
+
+/** 判断指定日期是否为 A 股法定节假日休市 */
+function isStockHoliday(date: Date): boolean {
+  return holidaySet.has(formatDateKey(date))
+}
 
 function formatDateKey(d: Date): string {
   const y = d.getFullYear()
@@ -69,8 +142,8 @@ export function getTradingSession(): TradingSession {
   // 1) 周末
   if (day === 0 || day === 6) return 'weekend'
 
-  // 2) 法定节假日
-  if (CHINA_STOCK_HOLIDAYS_2025_2026.has(formatDateKey(now))) return 'holiday'
+  // 2) 法定节假日（动态 API + 兜底降级）
+  if (isStockHoliday(now)) return 'holiday'
 
   // 3) 盘前（0:00 - 9:30）
   if (timeMinutes < 570) return 'pre_market'

@@ -7,6 +7,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   test: {
     globals: true,
     environment: 'happy-dom',
