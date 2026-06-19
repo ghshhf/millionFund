@@ -1,0 +1,25 @@
+{
+  "name": "AI百万实盘",
+  "short_name": "百万实盘",
+  "description": "全平台基金管理系统 - 实时估值 · AI调仓追踪 · 多源资讯",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0e11",
+  "theme_color": "#1677ff",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/src/assets/title.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/src/assets/title.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "investment", "utilities"],
+  "lang": "zh-CN"
+}

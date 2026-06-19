@@ -26,11 +26,11 @@
           <div class="download-icon">📱</div>
           <div class="download-info">
             <div class="download-name">Android APK</div>
-            <div class="download-desc">适用于 Android 手机/平板</div>
+            <div class="download-desc">适用于 Android 手机/平板，下载后直接安装</div>
           </div>
           <div class="download-buttons">
-            <van-button type="primary" size="small" round @click="downloadApk('debug')">下载 APK</van-button>
-            <van-button plain size="small" round @click="downloadApk('release')">正式版</van-button>
+            <van-button type="primary" size="small" round @click="downloadAndInstallApk">📲 安装 APK</van-button>
+            <van-button plain size="small" round @click="showApkQr = true">二维码</van-button>
           </div>
         </div>
 
@@ -84,7 +84,28 @@
             <van-button plain size="small" round @click="copyWebUrl">复制链接</van-button>
           </div>
         </div>
+
+        <!-- PWA 安装横幅 -->
+        <div v-if="canInstallPwa" class="pwa-install-banner">
+          <div class="pwa-install-info">
+            <span>📲</span>
+            <span>安装到桌面，体验更流畅</span>
+          </div>
+          <van-button type="primary" size="small" round @click="installPwa">一键安装</van-button>
+        </div>
       </div>
+
+      <!-- ========== APK 安装二维码弹窗 ========== -->
+      <van-overlay :show="showApkQr" @click="showApkQr = false">
+        <div class="qr-modal" @click.stop>
+          <div class="qr-title">📱 扫码安装 Android 版</div>
+          <div class="qr-hint">用手机相机或浏览器扫码即可下载 APK</div>
+          <img :src="apkQrUrl" alt="APK 下载二维码" class="qr-image" />
+          <div class="qr-url">{{ apkDownloadUrl }}</div>
+          <van-button type="primary" size="small" round @click="downloadApk('debug')">直接下载</van-button>
+          <van-button plain size="small" round style="margin-top: 8px" @click="showApkQr = false">关闭</van-button>
+        </div>
+      </van-overlay>
 
       <!-- ========== 构建信息 ========== -->
       <div class="section">
@@ -119,13 +140,84 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showSuccessToast } from 'vant'
+import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import { APP_INFO, GITHUB_REPO, DOWNLOAD_URLS, RELEASES_URL, getBuildTime } from '@/config/release'
 import { getPlatform, isWeb, isAndroid, isElectron, isMobile } from '@/utils/platform'
 
 const router = useRouter()
 
 const buildTime = ref(getBuildTime())
+
+// ========== PWA 安装 ==========
+const pwaInstallEvent = ref<any>(null)
+const canInstallPwa = ref(false)
+
+onMounted(() => {
+  // [WHAT] 监听 PWA beforeinstallprompt 事件
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault()
+    pwaInstallEvent.value = e
+    canInstallPwa.value = true
+  })
+
+  // [WHAT] PWA 安装成功
+  window.addEventListener('appinstalled', () => {
+    canInstallPwa.value = false
+    pwaInstallEvent.value = null
+    showSuccessToast('安装成功 🎉')
+  })
+})
+
+async function installPwa() {
+  if (!pwaInstallEvent.value) {
+    showToast('请使用浏览器菜单"添加到主屏幕"')
+    return
+  }
+  pwaInstallEvent.value.prompt()
+  const result = await pwaInstallEvent.value.userChoice
+  if (result.outcome === 'accepted') {
+    showSuccessToast('安装成功 🎉')
+  }
+  pwaInstallEvent.value = null
+  canInstallPwa.value = false
+}
+
+/** 点击安装/下载 APK */
+async function downloadAndInstallApk() {
+  const dlUrl = DOWNLOAD_URLS.android.debug
+  
+  // [WHAT] Android 设备上直接下载 APK，系统会弹出安装提示
+  if (isAndroid()) {
+    // Android 原生应用：通过 Capacitor 或系统浏览器下载
+    window.open(dlUrl, '_system')
+    showToast('APK 下载中，请查看通知栏')
+    return
+  }
+  
+  // [WHAT] Web/桌面端：在浏览器中打开下载
+  window.open(dlUrl, '_blank')
+  showToast('正在下载 APK...')
+  
+  // [WHAT] 提示扫码安装
+  showConfirmDialog({
+    title: '📱 手机安装',
+    message: '用手机扫描二维码即可直接安装到手机',
+    confirmButtonText: '扫码安装',
+  }).then(() => {
+    showApkQr.value = true
+  }).catch(() => {
+    // 取消
+  })
+}
+
+/** 是否显示 APK 安装二维码 */
+const showApkQr = ref(false)
+const apkDownloadUrl = DOWNLOAD_URLS.android.debug
+
+/** 生成二维码（用在线 API 生成） */
+const apkQrUrl = computed(() => {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(apkDownloadUrl)}`
+})
 
 /** 平台标签 */
 const platformLabel = computed(() => {
@@ -373,6 +465,65 @@ function openUrl(url: string) {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+/* ========== PWA 安装横幅 ========== */
+.pwa-install-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.1), rgba(22, 119, 255, 0.05));
+  border: 1px solid rgba(22, 119, 255, 0.2);
+  border-radius: 12px;
+}
+.pwa-install-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* ========== APK 二维码弹窗 ========== */
+.qr-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 280px;
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.qr-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.qr-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.qr-image {
+  width: 180px;
+  height: 180px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+.qr-url {
+  font-size: 10px;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-align: center;
+  max-width: 100%;
 }
 
 .bottom-spacer {

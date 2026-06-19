@@ -40,6 +40,17 @@ window.onunhandledrejection = (event) => {
   })
 }
 
+// [WHAT] 注册 PWA Service Worker（仅在生产环境）
+if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      logger.info('Service Worker 注册成功', { scope: reg.scope })
+    }).catch((err) => {
+      logger.warn('Service Worker 注册失败', err)
+    })
+  })
+}
+
 app.mount('#app')
 
 // [WHAT] 检查版本并清除旧缓存
