@@ -61,7 +61,7 @@ const router = createRouter({
       path: '/alerts',
       name: 'alerts',
       component: () => import('@/views/Alerts.vue'),
-      meta: { title: '设置' }
+      meta: { title: '关于' }
     },
     {
       path: '/:pathMatch(.*)*',
