@@ -2,9 +2,12 @@
 // [WHY] 分时估值弹窗组件 - 展示单只基金的分时估值走势
 // [WHAT] 包含弹窗、图表绘制、数据加载，支持 forceRefresh 跳过缓存
 
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { fetchIntradayData, type IntradayPoint } from '@/api/fundFast'
 import { logger } from '@/utils/logger'
+import { useTimer } from '@/composables/useTimer'
+
+const { safeTimeout, clearSafeTimeout } = useTimer()
 
 const props = defineProps<{
   show: boolean
@@ -150,18 +153,20 @@ watch(data, () => {
 }, { deep: true })
 
 function tryDraw(attempts = 0) {
-  if (retryTimer) {
-    clearTimeout(retryTimer)
-    retryTimer = undefined
-  }
+  clearSafeTimeout(retryTimer)
+  retryTimer = undefined
   if (!canvasRef.value || data.value.length === 0) {
     if (attempts < 10) {
-      retryTimer = window.setTimeout(() => tryDraw(attempts + 1), 50)
+      retryTimer = safeTimeout(() => tryDraw(attempts + 1), 50)
     }
     return
   }
   drawChart()
 }
+
+onUnmounted(() => {
+  clearSafeTimeout(retryTimer)
+})
 
 const lastPoint = () => {
   const p = data.value[data.value.length - 1]

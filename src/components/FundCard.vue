@@ -5,7 +5,10 @@
 
 import type { WatchlistItem } from '@/types/fund'
 import { formatNetValue, formatPercent, getChangeStatus } from '@/utils/format'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
+import { useTimer } from '@/composables/useTimer'
+
+const { safeTimeout, clearSafeTimeout } = useTimer()
 
 const props = defineProps<{
   fund: WatchlistItem
@@ -28,7 +31,7 @@ watch(() => props.fund.estimateValue, (newVal, oldVal) => {
   
   if (newNum !== oldNum && oldNum !== 0) {
     flashClass.value = newNum > oldNum ? 'flash-up' : 'flash-down'
-    setTimeout(() => {
+    safeTimeout(() => {
       flashClass.value = ''
     }, 500)
   }
@@ -53,24 +56,28 @@ const displayValue = computed(() => {
 let pressTimer: ReturnType<typeof setTimeout> | null = null
 
 function onTouchStart() {
-  pressTimer = setTimeout(() => {
+  pressTimer = safeTimeout(() => {
     emit('longpress', props.fund.code, props.fund.name)
-  }, 500) // 长按500ms触发
+  }, 500)
 }
 
 function onTouchEnd() {
   if (pressTimer) {
-    clearTimeout(pressTimer)
+    clearSafeTimeout(pressTimer)
     pressTimer = null
   }
 }
 
 function onTouchMove() {
   if (pressTimer) {
-    clearTimeout(pressTimer)
+    clearSafeTimeout(pressTimer)
     pressTimer = null
   }
 }
+
+onUnmounted(() => {
+  clearSafeTimeout(pressTimer)
+})
 </script>
 
 <template>

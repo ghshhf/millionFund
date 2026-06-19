@@ -138,7 +138,7 @@ function goToAITracking() {
       <van-tabbar-item name="holding" icon="balance-list-o">我的持仓</van-tabbar-item>
       <div class="tabbar-center-placeholder" :class="{ 'is-active': activeTab === 'ai' }" @click="goToAITracking">
         <div class="tabbar-raised-button">
-          <span>AI追踪</span>
+          <span>AI<br>追踪</span>
         </div>
       </div>
       <van-tabbar-item name="home" icon="home-o">趋势行情</van-tabbar-item>
@@ -214,42 +214,45 @@ function goToAITracking() {
   font-weight: 600;
 }
 
-/* 中间占位区域 - 只占小部分宽度 */
+/* 中间占位区域 */
 .tabbar-center-placeholder {
-  flex: 0 0 60px;
+  flex: 0 0 56px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   height: 100%;
   position: relative;
 }
 
-/* 突出圆形按钮 - 上半圆突出，下半圆在tabbar内 */
+/* 突出圆形按钮 - 悬浮在 tabbar 上方 */
 .tabbar-raised-button {
-  width: 70px;
-  height: 70px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 -2px 10px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 -2px 12px rgba(102, 126, 234, 0.4);
   z-index: 10;
-  margin-top: -45px;
+  margin-top: -20px;
   transition: all 0.3s;
+  text-decoration: none;
+}
+
+.tabbar-raised-button span {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* 选中时的蓝色渐变 */
 .tabbar-center-placeholder.is-active .tabbar-raised-button {
   background: linear-gradient(180deg, #0ea5e9, #22d3ee);
-  box-shadow: 0 -2px 10px rgba(14, 165, 233, 0.5);
-}
-
-.tabbar-raised-button span {
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  white-space: nowrap;
+  box-shadow: 0 -2px 12px rgba(14, 165, 233, 0.4);
 }
 
 /* ========== 网络状态提示条 ========== */
