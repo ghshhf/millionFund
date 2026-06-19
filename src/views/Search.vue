@@ -68,7 +68,9 @@ async function doSearch(kw: string) {
       !unsupportedTypes.some(t => f.type.includes(t) || f.name.includes(t))
     ).slice(0, 10)
     
-    supportedResults.forEach(async (fund) => {
+    // [WHAT] 并行获取估值，更新搜索结果
+    // [EDGE] 使用 allSettled 确保所有请求完成后才结束搜索状态
+    await Promise.allSettled(supportedResults.map(async (fund) => {
       try {
         const estimate = await fetchFundEstimateFast(fund.code)
         if (estimate?.gszzl) {
@@ -81,7 +83,7 @@ async function doSearch(kw: string) {
       } catch {
         // 忽略单个基金获取失败
       }
-    })
+    }))
   } catch (err) {
     showToast('搜索失败')
   } finally {

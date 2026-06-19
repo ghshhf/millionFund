@@ -46,6 +46,24 @@ const router = createRouter({
       meta: { title: '财经资讯' }
     },
     {
+      path: '/market',
+      name: 'market',
+      component: () => import('@/views/Market.vue'),
+      meta: { title: '市场概览' }
+    },
+    {
+      path: '/trades/:code',
+      name: 'trades',
+      component: () => import('@/views/Trades.vue'),
+      meta: { title: '交易记录' }
+    },
+    {
+      path: '/alerts',
+      name: 'alerts',
+      component: () => import('@/views/Alerts.vue'),
+      meta: { title: '设置' }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }

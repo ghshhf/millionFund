@@ -1114,11 +1114,9 @@ async function onCopyLogs(): Promise<void> {
         </div>
 
         <div class="dialog-footer">
-          <!-- <van-button block type="primary" @click="submitCostAdjust">
-            确认调整
-          </van-button> -->
+          <!-- [TODO] submitCostAdjust 逻辑尚未完整实现，待完成后再启用 -->
           <van-button block type="primary" disabled>
-            确认调整（已禁用）
+            确认调整（功能待实现）
           </van-button>
         </div>
       </div>
