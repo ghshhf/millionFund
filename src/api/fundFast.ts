@@ -193,17 +193,17 @@ export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
   const cacheKey = `estimate_${code}`
 
   // [WHAT] 检查内存缓存
-  // const cached = cache.get<FundEstimate>(cacheKey)
-  // if (cached) return Promise.resolve(cached)
+  const cached = cache.get<FundEstimate>(cacheKey)
+  if (cached) return Promise.resolve(cached)
 
   // [WHAT] 获取持久化缓存
   const persisted = persistCache.get<FundEstimate>(cacheKey)
 
   // [WHAT] 非交易时间直接返回持久化缓存
-  // if (!isTradingTime() && persisted) {
-  //   cache.set(cacheKey, persisted, CACHE_TTL.ESTIMATE)
-  //   return Promise.resolve(persisted)
-  // }
+  if (!isTradingTime() && persisted) {
+    cache.set(cacheKey, persisted, CACHE_TTL.ESTIMATE)
+    return Promise.resolve(persisted)
+  }
 
   return withConcurrencyControl(() => {
     return new Promise((resolve, reject) => {
@@ -931,10 +931,10 @@ export interface FundAccurateData {
 export async function fetchFundAccurateData(code: string, isQDII: boolean = false): Promise<FundAccurateData> {
   const cacheKey = `accurate_${code}`
   // [WHAT] QDII 基金不使用缓存，因为它们的交易时间与 A 股不同
-  // if (!isQDII) {
-  //   const cached = cache.get<FundAccurateData>(cacheKey)
-  //   if (cached) return cached
-  // }
+  if (!isQDII) {
+    const cached = cache.get<FundAccurateData>(cacheKey)
+    if (cached) return cached
+  }
 
   // [WHAT] 获取估值数据和历史净值数据
   const [estimateData, historyResult] = await Promise.all([

@@ -545,7 +545,7 @@ export async function fetchHotThemes(): Promise<HotTheme[]> {
  * 获取基金评级信息
  * [WHY] 展示各机构对基金的评级
  */
-export async function fetchFundRating(code: string): Promise<FundRating | null> {
+export async function fetchFundRatingFromEval(code: string): Promise<FundRating | null> {
   const cacheKey = `rating_${code}`
   const cached = cache.get<FundRating>(cacheKey)
   if (cached) return cached
@@ -1370,8 +1370,8 @@ export interface FundFeeInfo {
 /**
  * 获取基金费率信息
  * [WHY] 投资者在买入/卖出前需要了解交易成本
- * [HOW] 根据基金代码后缀判断A/C类，返回对应费率结构
- * [NOTE] 由于天天基金接口有CORS限制，使用行业标准费率
+ * [TODO] 需接入真实API获取准确费率，当前数据为行业通用估算值
+ * [NOTE] A类/C类判断基于基金代码末尾字母（C/E 判断为 C 类），不保证完全准确
  */
 export async function fetchFundFees(fundCode: string): Promise<FundFeeInfo> {
   const cacheKey = `fees_${fundCode}`
@@ -1379,9 +1379,10 @@ export async function fetchFundFees(fundCode: string): Promise<FundFeeInfo> {
   if (cached) return cached
   
   // [WHAT] 判断基金类型（A类前端收费，C类销售服务费）
-  // 通常：偶数结尾为A类，奇数结尾为C类；或名称含A/C
-  const lastDigit = parseInt(fundCode.slice(-1))
-  const isClassC = lastDigit % 2 === 1  // 简化判断：奇数为C类
+  // [NOTE] 基金代码的奇偶性不判断A/C类，这里改用末尾字母作为简易启发式
+  // [TODO] 需接入真实API获取准确费率，当前数据为行业通用估算值
+  const lastChar = fundCode.slice(-1).toUpperCase()
+  const isClassC = lastChar === 'C' || lastChar === 'E'
   
   // [WHAT] A类基金费率（前端收费，无销售服务费）
   const classAFees: FundFeeInfo = {
