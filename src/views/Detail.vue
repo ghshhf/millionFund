@@ -10,11 +10,18 @@ import { useHoldingStore } from '@/stores/holding'
 import { 
   fetchFundEstimateFast, fetchLatestNetValue,
   fetchFundAccurateData,
+  fetchTopHoldings,
+  fetchIndustryAllocation,
+  fetchAssetAllocation,
+  fetchFundRating,
 } from '@/api/fundFast'
-import { 
-  type PeriodReturnExt
-} from '@/api/tiantianApi'
 import type { FundEstimate } from '@/types/fund'
+import type { IndustryAllocation, AssetAllocation, FundRating } from '@/api/fundFast'
+import { 
+  type PeriodReturnExt,
+  fetchPeriodReturnExt,
+} from '@/api/tiantianApi'
+import { fetchFundFees, type FundFeeInfo } from '@/api/tiantianApi'
 import { sourceOptions as configSourceOptions, getSourceLabel } from '@/config/sources'
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
 import ProChart from '@/components/OKXChart.vue'
@@ -43,6 +50,61 @@ const trendPrediction = ref<TrendPrediction | null>(null)
 const fundScore = ref<FundScore | null>(null)
 const returnAnalysis = ref<ReturnAnalysis | null>(null)
 const isTrendLoading = ref(false)
+
+// [WHAT] 详情页各功能模块数据
+const fundScale = ref<{
+  scale: number; scaleDate: string; shareTotal: number
+  institutionRatio: number; personalRatio: number
+} | null>(null)
+const fundFees = ref<FundFeeInfo | null>(null)
+const stockHoldings = ref<{ stockCode: string; stockName: string; holdingRatio: number }[]>([])
+const industryAllocation = ref<IndustryAllocation[]>([])
+const assetAllocation = ref<AssetAllocation | null>(null)
+const fundRating = ref<FundRating | null>(null)
+const periodReturns = ref<PeriodReturnExt[]>([])
+const sectorInfo = ref<{ name: string; dayReturn: number } | null>(null)
+const similarFunds = ref<{ code: string; name: string; yearReturn: number }[]>([])
+const dividendRecords = ref<{ date: string; amount: number; type: string }[]>([])
+const announcements = ref<{ id: string; title: string; date: string; type: string; url: string }[]>([])
+
+// [WHAT] 最佳周期回报（用于顶部核心指标展示）
+const bestPeriodReturn = computed(() => {
+  if (periodReturns.value.length === 0) return { label: '最佳回报', value: 0 }
+  const sorted = [...periodReturns.value].sort((a, b) => b.fundReturn - a.fundReturn)
+  return { label: sorted[0]!.label, value: sorted[0]!.fundReturn }
+})
+
+// [WHAT] 行业配置饼图数据（转换为SVG stroke-dasharray格式）
+const industryPieData = computed(() => {
+  const total = industryAllocation.value.reduce((s, i) => s + i.ratio, 0)
+  if (total === 0) return []
+  const circumference = 2 * Math.PI * 40  // r=40
+  let offset = 0
+  return industryAllocation.value.map(item => {
+    const ratio = item.ratio / total
+    const dashArray = ratio * circumference
+    const result = { ...item, dashArray: `${dashArray} ${circumference - dashArray}`, offset: -offset }
+    offset += dashArray
+    return result
+  })
+})
+
+// [WHAT] 预估赎回费
+const estimatedRedemptionFee = computed(() => {
+  if (!fundFees.value || !holdingDetails.value) return null
+  const holdDays = holdingDetails.value.holdDays
+  const fee = fundFees.value.redemptionFees.find(f => holdDays >= f.minDays && holdDays < f.maxDays)
+  if (!fee) return null
+  return {
+    rate: fee.rate,
+    fee: holdingDetails.value.amount * (fee.rate / 100)
+  }
+})
+
+// [WHAT] 累计分红
+const totalDividend = computed(() => {
+  return dividendRecords.value.reduce((s, r) => s + r.amount, 0)
+})
 
 
 
@@ -188,6 +250,55 @@ async function loadFundData() {
     showToast('加载失败')
   } finally {
     isLoading.value = false
+  }
+  
+  // [WHAT] 加载详情页各功能模块数据（不阻塞主流程）
+  loadFundDetails()
+}
+
+async function loadFundDetails() {
+  const code = fundCode.value
+  if (!code) return
+
+  try {
+    // [WHAT] 并行加载不需要依赖顺序的数据
+    const [holdingsResult, industryData, assetData, ratingResult, periodResult, feesResult] = await Promise.all([
+      fetchTopHoldings(code).catch(() => []),
+      fetchIndustryAllocation(code).catch(() => []),
+      fetchAssetAllocation(code).catch(() => null),
+      fetchFundRating(code).catch(() => null),
+      fetchPeriodReturnExt(code).catch(() => []),
+      fetchFundFees(code).catch(() => null),
+    ])
+
+    // [WHAT] 重仓股票 - 转换格式适配模板
+    stockHoldings.value = holdingsResult
+      .filter(h => h.weight && parseFloat(h.weight) > 0)
+      .map(h => ({
+        stockCode: h.code,
+        stockName: h.name,
+        holdingRatio: parseFloat(h.weight) || 0
+      }))
+      .sort((a, b) => b.holdingRatio - a.holdingRatio)
+
+    // [WHAT] 行业配置
+    industryAllocation.value = industryData
+
+    // [WHAT] 资产配置
+    assetAllocation.value = assetData
+
+    // [WHAT] 基金评级
+    fundRating.value = ratingResult
+
+    // [WHAT] 阶段涨幅
+    periodReturns.value = periodResult
+
+    // [WHAT] 费率信息
+    fundFees.value = feesResult
+
+  } catch (err) {
+    // 单个模块加载失败不影响整体页面
+    logger.error('加载详情页数据失败', err)
   }
 }
 
@@ -544,7 +655,7 @@ function formatPercent(num: number): string {
       </div>
       
       <!-- 核心指标 -->
-      <!-- <div class="core-metrics" v-if="!isLoading">
+      <div class="core-metrics" v-if="!isLoading">
         <div class="main-change">
           <div class="change-label">当日涨幅 {{ fundInfo?.gztime?.slice(5, 10) || '--' }}</div>
           <div class="change-value" :class="isUp ? 'up' : 'down'">
@@ -567,14 +678,14 @@ function formatPercent(num: number): string {
             </div>
           </div>
         </div>
-      </div> -->
-      <!-- <div v-else class="core-metrics loading">
+      </div>
+      <div v-else class="core-metrics loading">
         <van-loading color="var(--text-secondary)" />
-      </div> -->
+      </div>
     </div>
 
-    <!-- 持仓数据区（已隐藏） -->
-    <!-- <div v-if="holdingDetails" class="holding-panel" :class="{ collapsed: !holdingExpanded }">
+    <!-- 持仓数据区 -->
+    <div v-if="holdingDetails" class="holding-panel" :class="{ collapsed: !holdingExpanded }">
       <div class="holding-summary" @click="holdingExpanded = !holdingExpanded">
         <div class="summary-item">
           <span class="summary-label">持有金额</span>
@@ -646,7 +757,7 @@ function formatPercent(num: number): string {
           </div>
         </div>
       </transition>
-    </div> -->
+    </div>
 
     <!-- 图表区域 -->
     <div class="chart-section">
@@ -661,8 +772,8 @@ function formatPercent(num: number): string {
       
     </div>
 
-    <!-- 业绩走势（Tab2） -->
-    <!-- <div class="performance-section" v-show="activeTab === 'performance'">
+    <!-- 业绩走势 -->
+    <div class="performance-section" v-show="activeTab === 'performance'">
       <div v-if="periodReturns.length > 0" class="period-grid">
         <div 
           v-for="item in periodReturns.slice(0, 6)" 
@@ -679,10 +790,10 @@ function formatPercent(num: number): string {
         </div>
       </div>
       <van-empty v-else description="暂无业绩数据" />
-    </div> -->
+    </div>
 
-    <!-- 我的收益（Tab3） -->
-    <!-- <div class="profit-section" v-show="activeTab === 'profit'">
+    <!-- 我的收益 -->
+    <div class="profit-section" v-show="activeTab === 'profit'">
       <div v-if="holdingDetails" class="profit-chart">
         <div class="profit-summary">
           <div class="profit-total">
@@ -700,7 +811,7 @@ function formatPercent(num: number): string {
         </div>
       </div>
       <van-empty v-else description="暂未持有该基金" />
-    </div> -->
+    </div>
 
     <!-- 趋势预测 -->
     <div class="trend-section">
@@ -763,7 +874,7 @@ function formatPercent(num: number): string {
     </div>
 
     <!-- 关联板块 -->
-    <!-- <div v-if="sectorInfo" class="sector-section" @click="searchSimilarFunds">
+    <div v-if="sectorInfo" class="sector-section" @click="searchSimilarFunds">
       <div class="sector-info">
         <span class="sector-label">关联板块：</span>
         <span class="sector-name">{{ sectorInfo.name }}</span>
@@ -775,10 +886,10 @@ function formatPercent(num: number): string {
         {{ similarFunds.length }}只同类基金
         <van-icon name="arrow" />
       </div>
-    </div> -->
+    </div>
 
     <!-- 自定义行业板块 -->
-    <!-- <div v-if="holdingInfo?.industrySectors?.length" class="info-section">
+    <div v-if="holdingInfo?.industrySectors?.length" class="info-section">
       <div class="section-header">
         <span>自定义行业板块</span>
       </div>
@@ -787,7 +898,7 @@ function formatPercent(num: number): string {
           {{ holdingInfo.industrySectors || '未设置' }}
         </span>
       </div>
-    </div> -->
+    </div>
 
     <!-- 来源信息 -->
     <div v-if="holdingInfo?.source || holdingInfo?.isQDII" class="info-section">
@@ -802,7 +913,7 @@ function formatPercent(num: number): string {
     </div>
 
     <!-- 同类基金 -->
-    <!-- <div v-if="similarFunds.length > 0" class="similar-section">
+    <div v-if="similarFunds.length > 0" class="similar-section">
       <div class="section-header">
         <span>同类基金</span>
         <span class="section-tip">年涨幅TOP5</span>
@@ -823,10 +934,10 @@ function formatPercent(num: number): string {
           </div>
         </div>
       </div>
-    </div> -->
+    </div>
 
     <!-- ========== 基金规模 ========== -->
-    <!-- <div v-if="fundScale && fundScale.scale > 0" class="info-section">
+    <div v-if="fundScale && fundScale.scale > 0" class="info-section">
       <div class="section-header">
         <span>基金规模</span>
         <span class="section-tip">{{ fundScale.scaleDate }}</span>
@@ -849,10 +960,10 @@ function formatPercent(num: number): string {
           <div class="scale-label">个人持有</div>
         </div>
       </div>
-    </div> -->
+    </div>
 
     <!-- ========== 费率信息 ========== -->
-    <!-- <div v-if="fundFees" class="info-section">
+    <div v-if="fundFees" class="info-section">
       <div class="section-header">
         <span>费率信息</span>
       </div>
@@ -898,7 +1009,7 @@ function formatPercent(num: number): string {
         </div>
       </div>
       
-   
+     
       <div class="fee-table">
         <div class="table-title">赎回费率</div>
         <div class="table-row header">
@@ -930,10 +1041,10 @@ function formatPercent(num: number): string {
           预估赎回费: <span class="fee-amount">¥{{ estimatedRedemptionFee.fee.toFixed(2) }}</span>
         </div>
       </div>
-    </div> -->
+    </div>
 
     <!-- ========== 重仓股票 ========== -->
-    <!-- <div class="info-section">
+    <div class="info-section">
       <div class="section-header">
         <span>重仓股票</span>
         <span class="section-tip" v-if="stockHoldings.length > 0">
@@ -958,10 +1069,10 @@ function formatPercent(num: number): string {
         </div>
       </div>
       <div v-else class="empty-hint">暂无持仓数据</div>
-    </div> -->
+    </div>
 
     <!-- ========== 行业配置 ========== -->
-    <!-- <div class="info-section" v-if="industryAllocation.length > 0">
+    <div class="info-section" v-if="industryAllocation.length > 0">
       <div class="section-header">
         <span>行业配置</span>
       </div>
@@ -994,10 +1105,10 @@ function formatPercent(num: number): string {
           </div>
         </div>
       </div>
-    </div> -->
+    </div>
 
    
-    <!-- <div class="info-section" v-if="assetAllocation">
+    <div class="info-section" v-if="assetAllocation">
       <div class="section-header">
         <span>资产配置</span>
       </div>
@@ -1031,9 +1142,9 @@ function formatPercent(num: number): string {
           <span class="asset-value">{{ assetAllocation.other }}%</span>
         </div>
       </div>
-    </div> -->
+    </div>
 
-    <!-- <div class="info-section" v-if="fundRating">
+    <div class="info-section" v-if="fundRating">
       <div class="section-header">
         <span>基金评级</span>
         <span class="section-tip">{{ fundRating.riskLevel }}</span>
@@ -1068,7 +1179,7 @@ function formatPercent(num: number): string {
           </div>
         </div>
       </div>
-    </div> -->
+    </div>
 
    
     <!-- <div class="info-section">
@@ -1134,14 +1245,14 @@ function formatPercent(num: number): string {
         <van-icon name="shop-o" size="20" />
         <span>来源</span>
       </div>
-      <!-- <div class="bar-item" @click="showTransactions">
+      <div class="bar-item" @click="showTransactions">
         <van-icon name="orders-o" size="20" />
         <span>交易记录</span>
       </div>
       <div class="bar-item" @click="fundStore.isFundInWatchlist(fundCode) ? removeFromWatchlist() : addToWatchlist()">
         <van-icon :name="fundStore.isFundInWatchlist(fundCode) ? 'star' : 'star-o'" size="20" />
         <span>{{ fundStore.isFundInWatchlist(fundCode) ? '删自选' : '加自选' }}</span>
-      </div> -->
+      </div>
       <div class="bar-item" @click="manageSectors">
         <van-icon name="cluster-o" size="20" />
         <span>行业板块</span>

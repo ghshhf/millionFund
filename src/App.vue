@@ -97,7 +97,8 @@ watch(
 function onTabChange(name: string | number) {
   const routeMap: Record<string, string> = {
     home: '/',
-    holding: '/holding'
+    holding: '/holding',
+    ai: '/ai-tracking'
   }
   if (routeMap[name as string]) {
     router.push(routeMap[name as string]!)
