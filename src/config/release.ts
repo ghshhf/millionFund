@@ -1,16 +1,15 @@
 // [WHY] 发布与下载配置
-// [WHAT] 集中管理各平台下载链接和发布信息
-// [NOTE] 指向 GitHub Releases，每次发布新版本时更新
+// [WHAT] 各平台下载链接与发布信息（文件名必须与 CI/CD 产出一致）
+// [NOTE] 指向 GitHub Releases，CI 构建的产物文件名见 .github/workflows/build-all.yml
 
 import { APP_VERSION } from './version'
 
 /** GitHub 仓库信息 */
-export const GITHUB_REPO = 'ghshhf/millionFund'
-export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`
-export const RELEASES_URL = `${GITHUB_URL}/releases`
-
-/** 当前版本标签 */
-export const CURRENT_TAG = `v${APP_VERSION}`
+export const GITHUB_REPO = 'ghshhf/millionFund' as const
+export const GITHUB_URL = `https://github.com/${GITHUB_REPO}` as const
+export const RELEASES_URL = `${GITHUB_URL}/releases` as const
+export const RELEASE_DOWNLOAD = `${GITHUB_URL}/releases/download` as const
+export const CURRENT_TAG = `v${APP_VERSION}` as const
 
 /** 应用基本信息 */
 export const APP_INFO = {
@@ -21,31 +20,34 @@ export const APP_INFO = {
   license: 'MIT',
   github: GITHUB_URL,
   homepage: `${GITHUB_URL}#readme`,
-}
+} as const
 
-/** 各平台下载链接 */
+/**
+ * 各平台下载链接
+ * [NOTE] 文件名必须与 CI/CD build-all.yml 中的产物名称一致
+ * - Android: 见 assembleDebug 步骤 → AI百万实盘-Android-debug.apk
+ * - Windows: electron-builder → AI百万实盘 Setup x.y.z.exe / AI百万实盘 x.y.z.exe
+ * - macOS: electron-builder → AI百万实盘 x.y.z.dmg / AI百万实盘 x.y.z-arm64.dmg
+ * - Linux: electron-builder → AI百万实盘 x.y.z.AppImage / AI百万实盘_x.y.z_amd64.deb
+ */
 export const DOWNLOAD_URLS = {
-  /** Android APK（Debug 版） */
   android: {
-    debug: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}.apk`,
-    release: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}-release.apk`,
+    debug: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘-Android-debug.apk`,
+    release: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘-Android-release.apk`,
   },
-  /** Windows 安装包 */
   windows: {
-    nsis: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-Setup-${APP_VERSION}.exe`,
-    portable: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}.exe`,
+    nsis: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘 Setup ${APP_VERSION}.exe`,
+    portable: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘 ${APP_VERSION}.exe`,
   },
-  /** macOS */
   macos: {
-    dmg: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}.dmg`,
-    arm64: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}-arm64.dmg`,
+    dmg: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘 ${APP_VERSION}.dmg`,
+    arm64: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘 ${APP_VERSION}-arm64.dmg`,
   },
-  /** Linux */
   linux: {
-    appimage: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘-${APP_VERSION}.AppImage`,
-    deb: `${RELEASES_URL}/download/${CURRENT_TAG}/AI百万实盘_${APP_VERSION}_amd64.deb`,
+    appimage: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘 ${APP_VERSION}.AppImage`,
+    deb: `${RELEASE_DOWNLOAD}/${CURRENT_TAG}/AI百万实盘_${APP_VERSION}_amd64.deb`,
   },
-}
+} as const
 
 /** 构建时间 */
 export function getBuildTime(): string {
