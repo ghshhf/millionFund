@@ -134,6 +134,13 @@ function onClsTabChange(tab: 'telegram' | 'hotTopics' | 'plate') {
   else if (tab === 'plate' && plateList.value.length === 0) loadClsPlate()
 }
 
+async function onCopyLogs(): Promise<void> {
+  const { logger, copyLogsToClipboard } = await import('@/utils/logger')
+  const ok = await copyLogsToClipboard()
+  if (ok) showToast(`日志已复制 (${logger.getAll().length}条)`)
+  else showToast('复制失败，请手动复制')
+}
+
 // ========== 雪球 ==========
 
 async function loadXueqiuDiscussions() {

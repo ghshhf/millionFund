@@ -74,7 +74,7 @@
         </div>
 
         <!-- Web 版 -->
-        <div class="download-card" v-if="isWeb">
+        <div class="download-card" v-if="isWeb()">
           <div class="download-icon">🌐</div>
           <div class="download-info">
             <div class="download-name">Web 在线版</div>
