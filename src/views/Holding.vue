@@ -79,7 +79,8 @@ const showCostDialog = ref(false)
 const costFormData = ref({
   code: '',
   name: '',
-  amount: ''
+  amount: '',
+  profit: ''
 })
 
 // [WHAT] 页面挂载时初始化数据

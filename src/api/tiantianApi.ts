@@ -1271,7 +1271,7 @@ export async function fetchDividendRecords(fundCode: string): Promise<DividendRe
     const cbName = `dividend_cb_${Date.now()}`
     const jsonUrl = `https://api.fund.eastmoney.com/f10/fhsp?fundcode=${fundCode}&callback=${cbName}`
     
-    const jsonResp = await jsonpRequest(jsonUrl, cbName) as { 
+    const jsonResp = await jsonpRequest<any>(jsonUrl, 'callback', cbName) as { 
       Datas?: { 
         fhspList?: Array<{ 
           DJRQ: string   // 登记日期

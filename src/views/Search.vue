@@ -233,7 +233,7 @@ function isInWatchlist(code: string): boolean {
           <div class="fund-name">{{ fund.name }}</div>
           <div class="fund-meta">
             <span class="fund-code">{{ fund.code }}</span>
-            <van-tag plain size="mini" class="fund-type-tag">{{ fund.type }}</van-tag>
+            <van-tag plain size="small" class="fund-type-tag">{{ fund.type }}</van-tag>
           </div>
         </div>
         <div class="fund-change-col">
