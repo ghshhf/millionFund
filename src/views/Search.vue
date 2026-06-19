@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // [WHY] 搜索页 - 搜索基金并添加到自选
-// [WHAT] 输入基金代码或名称搜索，点击添加到自选
+// [WHAT] 输入基金代码或名称搜索，点击进入详情，支持添加到自选
 
 import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -9,12 +9,16 @@ import { searchFund } from '@/api/fundFast'
 import { fetchFundEstimateFast } from '@/api/fundFast'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import type { FundInfo } from '@/types/fund'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
 const fundStore = useFundStore()
 
 const keyword = ref('')
+
+// [WHAT] 搜索历史
+const searchHistory = ref<string[]>([])
 
 // [WHY] 从路由参数获取初始搜索关键词
 onMounted(() => {
@@ -23,6 +27,7 @@ onMounted(() => {
     keyword.value = q
     doSearch(q)
   }
+  loadSearchHistory()
 })
 
 // [WHAT] 扩展的搜索结果，包含实时涨跌幅
@@ -51,30 +56,65 @@ watch(keyword, (val) => {
   }, 300)
 })
 
+// [WHAT] 加载搜索历史
+function loadSearchHistory() {
+  try {
+    const saved = localStorage.getItem('fund_search_history')
+    if (saved) {
+      searchHistory.value = JSON.parse(saved).slice(0, 10)
+    }
+  } catch {
+    searchHistory.value = []
+  }
+}
+
+// [WHAT] 保存搜索历史
+function saveSearchHistory(kw: string) {
+  if (!kw.trim()) return
+  searchHistory.value = [kw, ...searchHistory.value.filter(h => h !== kw)].slice(0, 10)
+  try {
+    localStorage.setItem('fund_search_history', JSON.stringify(searchHistory.value))
+  } catch {
+    // 忽略存储失败
+  }
+}
+
+// [WHAT] 清除搜索历史
+function clearSearchHistory() {
+  searchHistory.value = []
+  try {
+    localStorage.removeItem('fund_search_history')
+  } catch {
+    // 忽略
+  }
+}
+
+// [WHAT] 点击搜索历史项
+function onHistoryClick(kw: string) {
+  keyword.value = kw
+  doSearch(kw)
+}
+
 // [WHAT] 执行搜索
 async function doSearch(kw: string) {
   if (!kw.trim()) return
   
+  saveSearchHistory(kw)
   isSearching.value = true
   try {
     const results = await searchFund(kw, 30)
     searchResults.value = results
     
     // [WHY] 异步获取涨跌幅数据，不阻塞搜索结果显示
-    // [HOW] 并行请求前10个支持估值的基金
-    // [EDGE] 过滤掉不支持估值的类型：期货、ETF联接、QDII、FOF
     const unsupportedTypes = ['期货', 'QDII', 'FOF', '联接', '其他']
     const supportedResults = results.filter(f => 
       !unsupportedTypes.some(t => f.type.includes(t) || f.name.includes(t))
     ).slice(0, 10)
     
-    // [WHAT] 并行获取估值，更新搜索结果
-    // [EDGE] 使用 allSettled 确保所有请求完成后才结束搜索状态
     await Promise.allSettled(supportedResults.map(async (fund) => {
       try {
         const estimate = await fetchFundEstimateFast(fund.code)
         if (estimate?.gszzl) {
-          // [WHAT] 找到对应的结果并更新
           const idx = searchResults.value.findIndex(r => r.code === fund.code)
           if (idx !== -1) {
             searchResults.value[idx]!.gszzl = estimate.gszzl
@@ -89,6 +129,11 @@ async function doSearch(kw: string) {
   } finally {
     isSearching.value = false
   }
+}
+
+// [WHAT] 进入基金详情
+function goToDetail(code: string) {
+  router.push(`/detail/${code}`)
 }
 
 // [WHAT] 格式化涨跌幅显示
@@ -109,7 +154,8 @@ function getChangeClass(gszzl?: string): string {
 }
 
 // [WHAT] 添加基金到自选
-async function handleAdd(fund: FundInfo) {
+async function handleAdd(e: Event, fund: FundInfo) {
+  e.stopPropagation()
   if (fundStore.isFundInWatchlist(fund.code)) {
     showToast('已在自选中')
     return
@@ -156,17 +202,39 @@ function isInWatchlist(code: string): boolean {
       @cancel="goBack"
     />
 
+    <!-- 搜索历史 -->
+    <div v-if="!keyword && searchHistory.length > 0" class="search-history">
+      <div class="history-header">
+        <span class="history-title">搜索历史</span>
+        <van-icon name="delete-o" size="16" class="history-clear" @click="clearSearchHistory" />
+      </div>
+      <div class="history-tags">
+        <van-tag
+          v-for="h in searchHistory"
+          :key="h"
+          class="history-tag"
+          round
+          @click="onHistoryClick(h)"
+        >
+          {{ h }}
+        </van-tag>
+      </div>
+    </div>
+
     <!-- 搜索结果列表 -->
     <div class="search-results">
       <div 
         v-for="fund in searchResults"
         :key="fund.code"
         class="fund-item"
-        @click="handleAdd(fund)"
+        @click="goToDetail(fund.code)"
       >
         <div class="fund-info">
           <div class="fund-name">{{ fund.name }}</div>
-          <div class="fund-meta">{{ fund.code }} · {{ fund.type }}</div>
+          <div class="fund-meta">
+            <span class="fund-code">{{ fund.code }}</span>
+            <van-tag plain size="mini" class="fund-type-tag">{{ fund.type }}</van-tag>
+          </div>
         </div>
         <div class="fund-change-col">
           <span 
@@ -179,8 +247,12 @@ function isInWatchlist(code: string): boolean {
           <span v-else class="fund-change empty">--</span>
         </div>
         <div class="fund-action">
-          <van-tag v-if="isInWatchlist(fund.code)" type="success" size="medium">已添加</van-tag>
-          <van-icon v-else name="add-o" size="22" color="#1989fa" />
+          <van-icon
+            :name="isInWatchlist(fund.code) ? 'success' : 'plus'"
+            :color="isInWatchlist(fund.code) ? '#07c160' : '#1989fa'"
+            size="22"
+            @click="(e: Event) => handleAdd(e, fund)"
+          />
         </div>
       </div>
 
@@ -192,7 +264,7 @@ function isInWatchlist(code: string): boolean {
       />
 
       <!-- 搜索提示 -->
-      <div v-if="!keyword" class="search-tip">
+      <div v-if="!keyword && searchHistory.length === 0" class="search-tip">
         <van-icon name="info-o" />
         <span>输入基金代码（如 001186）或名称搜索</span>
       </div>
@@ -202,11 +274,9 @@ function isInWatchlist(code: string): boolean {
 
 <style scoped>
 .search-page {
-  /* [WHY] 使用 100% 高度适配 flex 布局 */
   height: 100%;
   background: var(--bg-primary);
   transition: background-color 0.3s;
-  /* [WHY] 允许页面整体滚动 */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
@@ -218,6 +288,55 @@ function isInWatchlist(code: string): boolean {
   color: var(--text-secondary);
 }
 
+/* ========== 搜索历史 ========== */
+.search-history {
+  background: var(--bg-secondary);
+  padding: 12px 16px 16px;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.history-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.history-clear {
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.history-clear:active {
+  opacity: 0.6;
+}
+
+.history-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-tag {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: none;
+}
+
+.history-tag:active {
+  opacity: 0.7;
+}
+
+/* ========== 搜索结果 ========== */
 .search-results {
   background: var(--bg-secondary);
 }
@@ -232,7 +351,6 @@ function isInWatchlist(code: string): boolean {
   font-size: 14px;
 }
 
-/* [WHAT] 基金列表项样式 */
 .fund-item {
   display: flex;
   align-items: center;
@@ -265,9 +383,20 @@ function isInWatchlist(code: string): boolean {
 .fund-meta {
   font-size: 12px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-/* [WHAT] 涨跌幅列 - 固定宽度右对齐 */
+.fund-code {
+  font-family: 'DIN Alternate', 'Roboto Mono', monospace;
+}
+
+.fund-type-tag {
+  font-size: 10px;
+  padding: 0 4px;
+}
+
 .fund-change-col {
   width: 70px;
   text-align: right;
@@ -293,12 +422,15 @@ function isInWatchlist(code: string): boolean {
   color: var(--text-tertiary, #c8c9cc);
 }
 
-/* [WHAT] 操作按钮列 */
 .fund-action {
-  width: 56px;
+  width: 36px;
   display: flex;
   justify-content: center;
   align-items: center;
   flex-shrink: 0;
+}
+
+.fund-action .van-icon:active {
+  transform: scale(1.2);
 }
 </style>
