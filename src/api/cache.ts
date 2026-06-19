@@ -56,6 +56,23 @@ class CacheManager {
 // [WHAT] 导出单例
 export const cache = new CacheManager()
 
+// [WHAT] 兼容 utils/cache 的接口（秒级 TTL）
+export function getCache<T>(key: string): T | undefined {
+  return cache.get<T>(key) ?? undefined
+}
+
+export function setCache<T>(key: string, data: T, ttlSeconds: number): void {
+  cache.set(key, data, ttlSeconds * 1000)
+}
+
+export function clearCache(): void {
+  cache.clear()
+}
+
+export function removeCache(key: string): void {
+  cache.delete(key)
+}
+
 // [WHAT] 缓存TTL常量（秒级刷新优化）
 export const CACHE_TTL = {
   ESTIMATE: 800,        // 实时估值 0.8秒（秒级刷新）

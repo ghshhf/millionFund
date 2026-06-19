@@ -2,7 +2,7 @@
 // [WHAT] 提供北向资金、板块资金流、主力资金流向数据
 // [DEPS] 依赖 cache 工具和 http 封装
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {

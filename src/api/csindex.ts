@@ -2,7 +2,7 @@
 // [WHAT] 提供中证/国证指数行情、PE/PB估值分位、基金业绩基准数据
 // [DEPS] 依赖 cache 工具和 http 封装
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {
