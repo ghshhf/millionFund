@@ -5,7 +5,7 @@
  */
 
 /** 平台类型 */
-export type Platform = 'web' | 'android' | 'ios'
+export type Platform = 'web' | 'android' | 'ios' | 'electron'
 
 /** 当前平台 */
 let currentPlatform: Platform | null = null
@@ -16,6 +16,12 @@ let currentPlatform: Platform | null = null
  */
 export function getPlatform(): Platform {
   if (currentPlatform !== null) {
+    return currentPlatform
+  }
+
+  // [WHAT] 检查 Electron 环境
+  if ((window as any)?.electronAPI?.isElectron) {
+    currentPlatform = 'electron'
     return currentPlatform
   }
 
@@ -35,6 +41,20 @@ export function getPlatform(): Platform {
   }
 
   return currentPlatform
+}
+
+/**
+ * 判断是否是 Electron 桌面环境
+ */
+export function isElectron(): boolean {
+  return getPlatform() === 'electron'
+}
+
+/**
+ * 判断是否是桌面端（Electron 或大屏 Web）
+ */
+export function isDesktop(): boolean {
+  return isElectron() || (isWeb() && window.innerWidth >= 768)
 }
 
 /**

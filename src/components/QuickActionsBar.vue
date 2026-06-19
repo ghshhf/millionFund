@@ -43,6 +43,7 @@ function onSwitchChange(value: boolean) {
       />
       <van-icon name="replay" size="22" @click="emit('refresh')" />
       <van-icon name="description-o" size="22" @click="emit('copyLogs')" />
+      <van-icon name="setting-o" size="22" @click="emit('goToSettings')" title="关于" />
     </div>
   </div>
 </template>
