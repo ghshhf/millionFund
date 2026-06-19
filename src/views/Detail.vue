@@ -477,7 +477,7 @@ async function handleDelete() {
 }
 
 function setReminder() {
-  router.push('/alerts')
+  router.push('/about')
 }
 
 function showTransactions() {
@@ -1182,7 +1182,7 @@ function formatPercent(num: number): string {
     </div>
 
    
-    <!-- <div class="info-section">
+    <div class="info-section">
       <div class="section-header">
         <span>分红记录</span>
         <span class="section-tip" v-if="dividendRecords.length > 0">
@@ -1204,10 +1204,10 @@ function formatPercent(num: number): string {
         </div>
       </div>
       <div v-else class="empty-hint">暂无分红记录</div>
-    </div> -->
+    </div>
 
     <!-- ========== 基金公告 ========== -->
-    <!-- <div class="info-section">
+    <div class="info-section">
       <div class="section-header">
         <span>基金公告</span>
       </div>
@@ -1229,7 +1229,7 @@ function formatPercent(num: number): string {
         </div>
       </div>
       <div v-else class="empty-hint">暂无公告</div>
-    </div> -->
+    </div>
 
     <!-- 底部操作栏 -->
     <div class="bottom-bar">

@@ -2,7 +2,7 @@
 // [WHAT] 提供实时财经新闻、快讯、日历事件等数据
 // [DEPS] 依赖 apiEndpoints 配置和 cache 工具
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {
