@@ -127,7 +127,7 @@ export async function fetchLofPremiums(): Promise<LofPremium[]> {
         marketPrice: parseFloat(row.cell?.price || '0'),
         premium: parseFloat(row.cell?.premium_rt || '0'),
         volume: parseFloat(row.cell?.volume || '0') / 10000,
-        type: 'stock',
+        type: 'stock' as const,
       })).filter(f => f.name).slice(0, 15)
       setCache(cacheKey, list, CACHE_TTL.LOF_PREMIUM)
       return list
