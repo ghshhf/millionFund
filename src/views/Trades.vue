@@ -89,8 +89,6 @@ onMounted(async () => {
       fundInfo.value = {
         name: accurateData.name,
         fundName: accurateData.name,
-        fundType: accurateData.fundType,
-        fundScale: accurateData.fundScale,
       }
     } else if (holding) {
       fundInfo.value = { name: holding.name, fundName: holding.name }
