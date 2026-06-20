@@ -104,6 +104,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     name: 🪟 Windows (安装包)
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -133,6 +135,8 @@ jobs:
   build-macos:
     runs-on: macos-latest
     name: 🍎 macOS (DMG)
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -162,6 +166,8 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     name: 🐧 Linux (AppImage / deb)
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
