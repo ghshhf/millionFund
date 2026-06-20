@@ -6,6 +6,31 @@ import Tesseract from 'tesseract.js'
 import { logger } from './logger'
 
 /**
+ * 检测当前环境是否支持 Tesseract.js 运行
+ * [WHY] 某些 Android WebView 无法创建 WebWorker / 加载 WASM
+ * @returns true 表示可用，false 表示不支持
+ */
+let _supportChecked = false
+let _tesseractSupported = false
+
+export async function isTesseractSupported(): Promise<boolean> {
+  if (_supportChecked) return _tesseractSupported
+  _supportChecked = true
+
+  try {
+    // [WHAT] 尝试创建 Worker + 加载语言数据，需要在用户交互后调用
+    const worker = await (Tesseract as any).createWorker('eng')
+    await worker.terminate()
+    _tesseractSupported = true
+    logger.info('[OCR] Tesseract.js 初始化成功')
+  } catch (err: any) {
+    _tesseractSupported = false
+    logger.warn('[OCR] Tesseract.js 不兼容当前环境', err?.message || err)
+  }
+  return _tesseractSupported
+}
+
+/**
  * 识别结果中的持仓项
  */
 export interface RecognizedHolding {

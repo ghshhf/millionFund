@@ -5,7 +5,7 @@
 
 import { ref, computed } from 'vue'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
-import { recognizeHoldings, type RecognizedHolding } from '@/utils/ocr'
+import { isTesseractSupported, recognizeHoldings, type RecognizedHolding } from '@/utils/ocr'
 import { searchFund, fetchFundEstimate, fetchFundList } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
 import { useHoldingStore } from '@/stores/holding'
@@ -85,7 +85,15 @@ async function handleFileChange(event: Event) {
 async function startRecognition(file: File) {
   step.value = 'recognizing'
   ocrProgress.value = 0
-  ocrStatus.value = '准备识别...'
+  ocrStatus.value = '检测识别引擎...'
+
+  // [WHY] 某些 Android WebView 不支持 Tesseract.js 的 WebWorker/WASM
+  const supported = await isTesseractSupported()
+  if (!supported) {
+    showToast('当前设备不支持自动识别，请手动输入')
+    step.value = 'upload'
+    return
+  }
   
   try {
     const holdings = await recognizeHoldings(file, (progress, status) => {
