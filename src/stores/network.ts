@@ -5,7 +5,7 @@
 // [WHAT 新增] 增加 justRecovered 信号，从 offline → online 时自动触发页面刷新
 
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 export const useNetworkStore = defineStore('network', () => {
   // 当前是否在线

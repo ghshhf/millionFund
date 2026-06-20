@@ -30,7 +30,6 @@ const selectedImage = ref<string>('')
 const ocrProgress = ref(0)
 const ocrStatus = ref('')
 const recognizedHoldings = ref<RecognizedHolding[]>([])
-const selectedCodes = ref<Set<string>>(new Set())
 
 // [WHAT] 增强后的持仓信息（包含从 API 获取的名称和净值）
 interface EnhancedHolding extends RecognizedHolding {
@@ -247,7 +246,7 @@ async function confirmImport() {
   }
   
   step.value = 'importing'
-  const loading = showLoadingToast({ message: '导入中...', forbidClick: true })
+  showLoadingToast({ message: '导入中...', forbidClick: true })
   
   try {
     let imported = 0
@@ -407,11 +406,6 @@ function getConfidenceColor(confidence: number): string {
   if (confidence >= 0.8) return '#67c23a'
   if (confidence >= 0.5) return '#e6a23c'
   return '#f56c6c'
-}
-
-// [WHAT] 格式化金额
-function formatAmount(amount: number): string {
-  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 </script>
 

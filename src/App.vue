@@ -18,9 +18,6 @@ onUnmounted(() => {
   networkStore.cleanup()
 })
 
-// [WHAT] 水印文字
-const watermarkText = '软件AI百万实盘NEW'
-
 const route = useRoute()
 const router = useRouter()
 

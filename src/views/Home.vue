@@ -2,12 +2,12 @@
 // [WHY] 首页 - 展示自选基金列表、市场概览和快捷入口
 // [WHAT] 支持下拉刷新、左滑删除、点击跳转搜索添加、设置提醒
 
-import { ref, onMounted, watch, computed, onUnmounted, nextTick, onErrorCaptured } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
 import { useHoldingStore } from '@/stores/holding'
 import { useNetworkStore } from '@/stores/network'
-import { fetchTopHoldings, type HoldingStock, type MarketIndexSimple, type GlobalIndex } from '@/api/fundFast'
+import { type MarketIndexSimple } from '@/api/fundFast'
 import { showConfirmDialog, showToast } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import { logger, copyLogsToClipboard, exportLogsAsText } from '@/utils/logger'
@@ -27,7 +27,7 @@ const holdingStore = useHoldingStore()
 const networkStore = useNetworkStore()
 
 // 使用首页数据 hook
-const { indices, globalIndices, tradingSession, currentTime, isRefreshing, loadIndices, loadGlobalIndices, updateTradingSession } = useHomeData()
+const { indices, globalIndices, tradingSession, currentTime, isRefreshing, loadIndices, loadGlobalIndices } = useHomeData()
 
 // 弹窗可见性状态
 const showTopHoldingsPopup = ref(false)
@@ -125,9 +125,6 @@ const tradingStatus = computed(() => {
       return { text: '已收盘', subText: '09:30 开盘', class: 'closed', icon: 'clock' }
   }
 })
-
-// [WHAT] 是否显示全球指数面板
-const showGlobalIndices = ref(false)
 
 // [WHAT] 顶部展示指数（上证指数、创业板指、纳斯达克）
 const topIndices = computed(() => {
@@ -295,11 +292,6 @@ const jdUpdateStatus = computed(() => {
   return { text: '已更新', class: 'updated' }
 })
 
-// [WHAT] 排序持仓基金（兼容旧代码）
-const sortedHoldings = computed(() => {
-  return [...normalHoldings.value, ...observeHoldings.value]
-})
-
 // [WHAT] 沪深300实时涨跌幅
 const hs300ChangePercent = computed(() => {
   const hs300 = indices.value.find(idx => idx.code === '000300')
@@ -320,11 +312,6 @@ function filterBySource(source: string) {
     currentSourceFilter.value = source
     showToast(`已筛选 ${getSourceLabel(source)} 来源的基金`)
   }
-}
-
-// [WHAT] 重置排序
-function resetSort() {
-  sortDirection.value = 'none'
 }
 
 // [WHY] 网络从离线恢复在线后，自动刷新首页数据

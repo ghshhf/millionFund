@@ -83,10 +83,6 @@ function removeProgressListener(cb: OcrProgressCallback) {
   if (idx !== -1) progressListeners.splice(idx, 1)
 }
 
-async function initWorker() {
-  throw new Error('initWorker is removed: use per-call Tesseract.recognize instead')
-}
-
 /**
  * 从识别文字中解析持仓信息
  * [WHY] 不同平台的截图格式不同，需要灵活解析

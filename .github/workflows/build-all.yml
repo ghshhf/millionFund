@@ -30,7 +30,17 @@ jobs:
         run: npm ci
 
       - name: Build Web
-        run: npm run build
+        run: npm run build 2>&1
+      
+      - name: 验证构建产物
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "::error::构建失败！dist/index.html 不存在"
+            echo "::error::请检查上面的 TypeScript 错误信息"
+            echo "::error::常见修复：运行 npm run typecheck 本地调试"
+            exit 1
+          fi
+          echo "✅ Web 构建成功 (dist/${BRANCH:+main})"
 
       - name: 打包 zip
         run: |

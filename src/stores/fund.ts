@@ -8,7 +8,6 @@ import type { WatchlistItem, FundEstimate } from '@/types/fund'
 import { fetchFundEstimateFast, fetchFundAccurateData, fetchFundBasicInfo } from '@/api/fundFast'
 import {
   getWatchlist,
-  saveWatchlist,
   addToWatchlist as addToStorage,
   removeFromWatchlist as removeFromStorage,
   isInWatchlist

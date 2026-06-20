@@ -110,7 +110,7 @@ class Logger {
     const consoleArgs = data === undefined ? [`[${level}] ${message}`] : [`[${level}] ${message}`, data]
     if (level === 'error') console.error(...consoleArgs)
     else if (level === 'warn') console.warn(...consoleArgs)
-    else console.log(...consoleArgs)
+    else console.warn(...consoleArgs)
     this.scheduleSave()
   }
 

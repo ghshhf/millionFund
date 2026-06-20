@@ -8,11 +8,9 @@
 </template>
 
 <script setup lang="ts">
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
-const route = useRoute()
 const router = useRouter()
-const fundCode = route.params.code as string
 </script>
 
 <style scoped>

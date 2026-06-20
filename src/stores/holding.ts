@@ -95,13 +95,21 @@ export const useHoldingStore = defineStore('holding', () => {
     const records = getHoldings()
 
     const cleanedRecords = records.map((r: any) => {
+      // [WHY] 解构剥离旧字段，只保留有效字段到 rest
       const {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         shareClass,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         serviceFeeRate,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         serviceFeeDeducted,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         lastFeeDate,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         lastUpdateDate,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         originProfit,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         lastTodayProfit,
         ...rest
       } = r
