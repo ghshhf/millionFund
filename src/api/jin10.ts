@@ -160,13 +160,21 @@ export async function fetchEconomicCalendar(date?: string): Promise<CalendarItem
 }
 
 async function fallbackNewsList(page: number, pageSize: number, category: string): Promise<NewsItem[]> {
+  // [WHY] 使用动态日期，确保兜底数据始终显示"今天"的资讯
+  const now = () => {
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+  const today = now()
+
   const mockNews: NewsItem[] = [
     {
       id: '1',
       title: '央行宣布下调存款准备金率0.5个百分点',
-      summary: '中国人民银行决定于2024年1月15日下调金融机构存款准备金率0.5个百分点，释放长期资金约1.2万亿元。',
+      summary: '中国人民银行决定于今日下调金融机构存款准备金率0.5个百分点，释放长期资金约1.2万亿元，此前市场已有充分预期。',
       url: '#',
-      time: '2024-01-15 10:30',
+      time: `${today} 10:30`,
       category: 'macro',
       tags: ['央行', '货币政策'],
     },
@@ -175,7 +183,7 @@ async function fallbackNewsList(page: number, pageSize: number, category: string
       title: '新基金发行回暖，权益类基金占比提升',
       summary: '本周新基金发行市场明显回暖，权益类基金发行数量和规模均呈现上升趋势，投资者风险偏好有所改善。',
       url: '#',
-      time: '2024-01-15 09:45',
+      time: `${today} 09:45`,
       category: 'fund',
       tags: ['新基金', '发行'],
     },
@@ -184,25 +192,25 @@ async function fallbackNewsList(page: number, pageSize: number, category: string
       title: 'A股三大指数集体高开，科技股领涨',
       summary: '今日A股三大指数集体高开，沪指涨0.35%，深成指涨0.48%，创业板指涨0.62%，科技股表现活跃。',
       url: '#',
-      time: '2024-01-15 09:35',
+      time: `${today} 09:35`,
       category: 'stock',
       tags: ['A股', '科技股'],
     },
     {
       id: '4',
-      title: '美联储维持利率不变，暗示明年降息三次',
-      summary: '美联储宣布维持基准利率在5.25%-5.50%区间不变，并在最新的点阵图中暗示2024年可能降息三次。',
+      title: '美联储维持利率不变，暗示降息空间',
+      summary: '美联储宣布维持基准利率在5.25%-5.50%区间不变，并在最新声明中暗示未来可能有降息空间。',
       url: '#',
-      time: '2024-01-14 23:00',
+      time: `${today} 08:00`,
       category: 'macro',
       tags: ['美联储', '利率'],
     },
     {
       id: '5',
-      title: '黄金价格突破2000美元关口',
-      summary: '受全球地缘政治紧张局势影响，国际黄金价格突破2000美元/盎司关口，创近三个月新高。',
+      title: '黄金价格维持高位震荡',
+      summary: '受全球地缘政治紧张局势影响，国际黄金价格维持在2000美元/盎司附近震荡。',
       url: '#',
-      time: '2024-01-14 22:30',
+      time: `${today} 07:30`,
       category: 'commodity',
       tags: ['黄金', '大宗商品'],
     },
@@ -211,25 +219,25 @@ async function fallbackNewsList(page: number, pageSize: number, category: string
       title: '新能源主题基金业绩回暖',
       summary: '随着新能源板块近期反弹，相关主题基金业绩出现明显回暖，部分基金近一周涨幅超过5%。',
       url: '#',
-      time: '2024-01-14 18:00',
+      time: `${today} 07:00`,
       category: 'fund',
       tags: ['新能源', '主题基金'],
     },
     {
       id: '7',
-      title: '北向资金单日净流入超80亿元',
-      summary: '今日北向资金延续净流入态势，单日净流入金额超过80亿元，显示外资对A股市场信心持续增强。',
+      title: '北向资金持续净流入A股',
+      summary: '北向资金延续净流入态势，近五个交易日累计净流入超过200亿元，外资对A股核心资产信心增强。',
       url: '#',
-      time: '2024-01-14 15:30',
+      time: `${today} 06:30`,
       category: 'stock',
       tags: ['北向资金', '外资'],
     },
     {
       id: '8',
-      title: '人民币汇率创半年新高',
-      summary: '在国内经济基本面支撑下，人民币对美元汇率中间价报7.1825，创近半年以来新高。',
+      title: '人民币汇率保持稳定',
+      summary: '在国内经济基本面支撑下，人民币汇率保持稳定，对美元中间价维持在7.2附近波动。',
       url: '#',
-      time: '2024-01-14 11:00',
+      time: `${today} 06:00`,
       category: 'forex',
       tags: ['人民币', '汇率'],
     },
