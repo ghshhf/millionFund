@@ -18,12 +18,12 @@ jobs:
     name: 🌐 Web (静态站点)
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -40,7 +40,7 @@ jobs:
             echo "::error::常见修复：运行 npm run typecheck 本地调试"
             exit 1
           fi
-          echo "✅ Web 构建成功 (dist/${BRANCH:+main})"
+          echo "✅ Web 构建成功"
 
       - name: 打包 zip
         run: |
@@ -49,7 +49,7 @@ jobs:
           cd ..
 
       - name: Upload Web 产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: AI百万实盘-Web
           path: AI百万实盘-Web.zip
@@ -61,12 +61,12 @@ jobs:
     needs: build-web
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Setup JDK
@@ -97,7 +97,7 @@ jobs:
           echo "APK 大小: $(ls -lh AI百万实盘-Android-debug.apk | awk '{print $5}')"
 
       - name: Upload Android 产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: AI百万实盘-Android-debug
           path: AI百万实盘-Android-debug.apk
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 下载全部产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: release-assets
 
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 下载全部产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: release-assets
 
@@ -142,12 +142,12 @@ jobs:
         run: ls -lhR release-assets/
 
       - name: 删除旧的开发版 Release
-        uses: dev-drprasad/delete-older-releases@v1.2
-        with:
-          keep_latest: 0
-          delete_tag_pattern: 'dev-*'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --json tagName -q '.[].tagName' | grep '^dev-' | while read tag; do
+            gh release delete "$tag" --yes
+          done
 
       - name: 创建开发版 Release
         uses: softprops/action-gh-release@v2
