@@ -527,7 +527,7 @@ function goToDetail(code: string) {
         v-model:auto-refresh-enabled="autoRefreshEnabled"
         @refresh="refreshData"
         @copy-logs="onCopyLogs"
-        @go-to-settings="router.push('/alerts')"
+        @go-to-settings="router.push('/about')"
       />
     </div>
     

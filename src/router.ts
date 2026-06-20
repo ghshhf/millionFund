@@ -58,9 +58,9 @@ const router = createRouter({
       meta: { title: '交易记录' }
     },
     {
-      path: '/alerts',
-      name: 'alerts',
-      component: () => import('@/views/Alerts.vue'),
+      path: '/about',
+      name: 'about',
+      component: () => import('@/views/About.vue'),
       meta: { title: '关于' }
     },
     {

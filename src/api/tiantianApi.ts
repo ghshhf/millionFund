@@ -4,6 +4,7 @@
 
 import { cache, CACHE_TTL } from './cache'
 import { queueGlobalVarScript } from './fundFast'
+import { jsonpRequest } from './jsonp'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 
@@ -1138,11 +1139,9 @@ export async function fetchFinanceNews(pageSize = 10): Promise<NewsItem[]> {
 
 // [WHAT] 东方财富7x24快讯（实时性强）
 async function fetchEastmoney7x24(pageSize: number): Promise<NewsItem[]> {
-  const callbackName = `news7x24_${Date.now()}`
-  const url = `https://np-listapi.eastmoney.com/comm/web/getStockNews?cb=${callbackName}&_=${Date.now()}&type=0&pageSize=${pageSize}`
-  
-  const data = await jsonpRequest(url, callbackName, 5000)
-  
+  const url = `https://np-listapi.eastmoney.com/comm/web/getStockNews?type=0&pageSize=${pageSize}`
+  const data = await jsonpRequest<any>(url, 'cb', 'news7x24', 5000)
+
   if (!data?.data?.list) return []
   
   return data.data.list.map((item: any) => ({
@@ -1157,11 +1156,9 @@ async function fetchEastmoney7x24(pageSize: number): Promise<NewsItem[]> {
 
 // [WHAT] 东方财富基金资讯
 async function fetchEastmoneyFundNews(pageSize: number): Promise<NewsItem[]> {
-  const callbackName = `fundNews_${Date.now()}`
-  const url = `https://np-listapi.eastmoney.com/comm/wap/getListInfo?cb=${callbackName}&client=wap&type=5&pageSize=${pageSize}&pageIndex=0&_=${Date.now()}`
-  
-  const data = await jsonpRequest(url, callbackName, 5000)
-  
+  const url = `https://np-listapi.eastmoney.com/comm/wap/getListInfo?client=wap&type=5&pageSize=${pageSize}&pageIndex=0`
+  const data = await jsonpRequest<any>(url, 'cb', 'fundNews', 5000)
+
   if (!data?.data?.list) return []
   
   return data.data.list.map((item: any) => ({
@@ -1172,37 +1169,6 @@ async function fetchEastmoneyFundNews(pageSize: number): Promise<NewsItem[]> {
     time: formatNewsTime(item.showtime || item.time || ''),
     url: item.url || item.art_uniqueUrl || ''
   })).filter((n: NewsItem) => n.title)
-}
-
-// [WHAT] 通用JSONP请求函数
-async function jsonpRequest(url: string, callbackName: string, timeout = 8000): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      cleanup()
-      reject(new Error('timeout'))
-    }, timeout)
-    
-    const cleanup = () => {
-      clearTimeout(timeoutId)
-      delete (window as any)[callbackName]
-      const s = document.getElementById(`jsonp_${callbackName}`)
-      if (s) s.remove()
-    }
-    
-    ;(window as any)[callbackName] = (data: any) => {
-      cleanup()
-      resolve(data)
-    }
-    
-    const script = document.createElement('script')
-    script.id = `jsonp_${callbackName}`
-    script.src = url
-    script.onerror = () => {
-      cleanup()
-      reject(new Error('script error'))
-    }
-    document.head.appendChild(script)
-  })
 }
 
 // [WHAT] 格式化资讯时间
@@ -1305,7 +1271,7 @@ export async function fetchDividendRecords(fundCode: string): Promise<DividendRe
     const cbName = `dividend_cb_${Date.now()}`
     const jsonUrl = `https://api.fund.eastmoney.com/f10/fhsp?fundcode=${fundCode}&callback=${cbName}`
     
-    const jsonResp = await jsonpRequest(jsonUrl, cbName) as { 
+    const jsonResp = await jsonpRequest<any>(jsonUrl, 'callback', cbName) as { 
       Datas?: { 
         fhspList?: Array<{ 
           DJRQ: string   // 登记日期
