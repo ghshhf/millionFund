@@ -43,6 +43,29 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5173
+    port: 5173,
+    proxy: {
+      // [WHY] 解决开发环境第三方 API 跨域问题
+      '/api/jin10': {
+        target: 'https://www.jin10.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/jin10/, ''),
+      },
+      '/api/cls': {
+        target: 'https://www.cls.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/cls/, ''),
+      },
+      '/api/xueqiu': {
+        target: 'https://stock.xueqiu.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/xueqiu/, ''),
+      },
+      '/api/choice': {
+        target: 'https://data.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/choice/, ''),
+      },
+    },
   },
 })
