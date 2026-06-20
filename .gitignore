@@ -50,3 +50,5 @@ ios/*.xcworkspace
 
 # API配置（包含敏感接口地址）
 src/config/apiEndpoints.ts
+public/icon_old.png
+components.d.ts
