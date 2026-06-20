@@ -2,7 +2,7 @@
 // [WHAT] 提供A股盘面实时推送、主题驱动、板块异动提醒
 // [DEPS] 依赖 cache 工具和 http 封装
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {

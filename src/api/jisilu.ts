@@ -2,7 +2,7 @@
 // [WHAT] 提供可转债行情、LOF基金折溢价、REITs数据
 // [DEPS] 依赖 cache 工具和 http 封装
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {

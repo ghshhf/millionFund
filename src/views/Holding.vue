@@ -79,7 +79,8 @@ const showCostDialog = ref(false)
 const costFormData = ref({
   code: '',
   name: '',
-  amount: ''
+  amount: '',
+  profit: ''
 })
 
 // [WHAT] 页面挂载时初始化数据
@@ -331,64 +332,65 @@ function openCostDialog(code: string) {
   costFormData.value = {
     code: holding.code,
     name: holding.name,
-    amount: (holding.marketValue || 0).toString()
+    amount: (holding.marketValue || 0).toString(),
+    profit: (holding.profit || 0).toString()
   }
   
   showCostDialog.value = true
 }
 
 // [WHAT] 提交调整成本
-// async function submitCostAdjust() {
-//   const marketValue = parseFloat(costFormData.value.amount)
-//   const profit = parseFloat(costFormData.value.profit)
+async function submitCostAdjust() {
+  const marketValue = parseFloat(costFormData.value.amount)
+  const profit = parseFloat(costFormData.value.profit)
   
-//   if (!marketValue || marketValue <= 0) {
-//     showToast('请输入有效的持仓市值')
-//     return
-//   }
-//   if (isNaN(profit)) {
-//     showToast('请输入有效的持仓收益')
-//     return
-//   }
+  if (!marketValue || marketValue <= 0) {
+    showToast('请输入有效的持仓市值')
+    return
+  }
+  if (isNaN(profit)) {
+    showToast('请输入有效的持仓收益')
+    return
+  }
   
-//   const holding = holdingStore.getHoldingByCode(costFormData.value.code)
-//   if (!holding) return
+  const holding = holdingStore.getHoldingByCode(costFormData.value.code)
+  if (!holding) return
   
-//   showLoadingToast('正在获取最新净值...')
+  showLoadingToast('正在获取最新净值...')
   
-//   try {
-//     // 从网络获取最新净值
-//     const latestNetValue = await fetchLatestNetValue(holding.code)
+  try {
+    // 从网络获取最新净值
+    const latestNetValue = await fetchLatestNetValue(holding.code)
     
-//     if (!latestNetValue || latestNetValue.netValue <= 0) {
-//       showToast('获取最新净值失败，请稍后重试')
-//       return
-//     }
+    if (!latestNetValue || latestNetValue.netValue <= 0) {
+      showToast('获取最新净值失败，请稍后重试')
+      return
+    }
     
-//     let newNetValue = latestNetValue.netValue
-//     let newShares = marketValue / newNetValue
+    let newNetValue = latestNetValue.netValue
+    let newShares = marketValue / newNetValue
     
-//     // [WHAT] 构建更新后的持仓记录，保留原有的其他字段
-//     const record: HoldingRecord = {
-//       ...holding,
-//       // 输入的持仓金额作为市值（marketValue 字段）
-//       marketValue: marketValue,
-//       // 输入的持仓收益
-//       profit: profit,
-//       // 使用新的买入净值和份额
-//       buyNetValue: newNetValue,
-//       shares: newShares
-//     }
+    // [WHAT] 构建更新后的持仓记录，保留原有的其他字段
+    const record: HoldingRecord = {
+      ...holding,
+      // 输入的持仓金额作为市值（marketValue 字段）
+      marketValue: marketValue,
+      // 输入的持仓收益
+      profit: profit,
+      // 使用新的买入净值和份额
+      buyNetValue: newNetValue,
+      shares: newShares
+    }
     
-//     holdingStore.addOrUpdateHolding(record)
-//     showToast('成本调整成功')
-//   } catch (error) {
-//     showToast('成本调整失败')
-//   } finally {
-//     closeToast()
-//     showCostDialog.value = false
-//   }
-// }
+    holdingStore.addOrUpdateHolding(record)
+    showToast('成本调整成功')
+  } catch (error) {
+    showToast('成本调整失败')
+  } finally {
+    closeToast()
+    showCostDialog.value = false
+  }
+}
 
 // [WHAT] 跳转到基金详情
 function goToDetail(code: string) {
@@ -1106,9 +1108,8 @@ async function onCopyLogs(): Promise<void> {
         </div>
 
         <div class="dialog-footer">
-          <!-- [TODO] submitCostAdjust 逻辑尚未完整实现，待完成后再启用 -->
-          <van-button block type="primary" disabled>
-            确认调整（功能待实现）
+          <van-button block type="primary" @click="submitCostAdjust">
+            确认调整
           </van-button>
         </div>
       </div>

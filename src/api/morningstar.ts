@@ -2,7 +2,7 @@
 // [WHAT] 提供晨星星级评级、投资风格箱、基金分类数据
 // [DEPS] 依赖 cache 工具和 http 封装
 
-import { getCache, setCache } from '@/utils/cache'
+import { getCache, setCache } from '@/api/cache'
 import { http } from '@/utils/http'
 
 const CACHE_TTL = {
