@@ -50,7 +50,7 @@
               </div>
               <div class="holding-item">
                 <span class="label">成本净值</span>
-                <span class="value">{{ formatPrice(h.costNetValue) }}</span>
+                <span class="value">{{ formatPrice(h.buyNetValue) }}</span>
               </div>
               <div class="holding-item">
                 <span class="label">市值</span>
@@ -58,8 +58,8 @@
               </div>
               <div class="holding-item">
                 <span class="label">收益</span>
-                <span class="value" :class="h.profit >= 0 ? 'profit' : 'loss'">
-                  {{ h.profit >= 0 ? '+' : '' }}{{ formatPrice(h.profit) }}
+                <span class="value" :class="(h.profit ?? 0) >= 0 ? 'profit' : 'loss'">
+                  {{ (h.profit ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(h.profit) }}
                 </span>
               </div>
             </div>
@@ -68,35 +68,26 @@
       </div>
 
       <!-- 买入记录 -->
-      <div class="section" v-if="holdingStore.records.length > 0">
+      <div class="section" v-if="holdings.length > 0">
         <div class="section-header">
-          <span class="section-title">历史买卖记录（{{ holdingStore.records.length }}）</span>
+          <span class="section-title">持仓详情</span>
         </div>
         <div class="record-list">
           <div
-            v-for="(r, i) in holdingStore.records"
+            v-for="(h, i) in holdings"
             :key="i"
             class="record-card"
           >
             <div class="record-header">
-              <span class="record-fund">{{ r.name || r.code }}</span>
-              <span class="record-type" :class="r.type">{{ r.type === 'buy' ? '买入' : '卖出' }}</span>
+              <span class="record-fund">{{ h.name || h.code }}</span>
+              <span class="record-type buy">持有中</span>
             </div>
             <div class="record-body">
-              <span>金额: {{ formatPrice(r.amount) }}</span>
-              <span v-if="r.shares">份额: {{ formatNum(r.shares) }}</span>
-              <span v-if="r.date">日期: {{ r.date }}</span>
+              <span>成本: {{ formatPrice(h.buyNetValue) }}</span>
+              <span v-if="h.shares">份额: {{ formatNum(h.shares) }}</span>
+              <span v-if="h.buyDate">日期: {{ h.buyDate }}</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div class="section" v-else-if="holdings.length > 0">
-        <div class="section-header">
-          <span class="section-title">历史买卖记录</span>
-        </div>
-        <div class="empty-state small">
-          <p class="empty-hint">详细的买卖记录功能开发中</p>
         </div>
       </div>
     </div>
