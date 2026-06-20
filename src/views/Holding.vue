@@ -339,7 +339,8 @@ function openCostDialog(code: string) {
   costFormData.value = {
     code: holding.code,
     name: holding.name,
-    amount: (holding.marketValue || 0).toString()
+    amount: (holding.marketValue || 0).toString(),
+    profit: (holding.profit || 0).toString()
   }
   
   showCostDialog.value = true

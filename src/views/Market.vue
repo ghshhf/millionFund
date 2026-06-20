@@ -52,7 +52,7 @@
           >
             <div class="index-name">{{ idx.name }}</div>
             <div class="index-region" v-if="idx.region">{{ idx.region }}</div>
-            <div class="index-price">{{ idx.current.toFixed(2) }}</div>
+            <div class="index-price">{{ idx.price.toFixed(2) }}</div>
             <div class="index-change">
               <span>{{ idx.changePercent >= 0 ? '+' : '' }}{{ idx.changePercent.toFixed(2) }}%</span>
               <span class="index-points">{{ idx.change >= 0 ? '+' : '' }}{{ idx.change.toFixed(2) }}</span>
