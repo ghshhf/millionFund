@@ -367,8 +367,8 @@ async function submitCostAdjust() {
       return
     }
     
-    let newNetValue = latestNetValue.netValue
-    let newShares = marketValue / newNetValue
+    const newNetValue = latestNetValue.netValue
+    const newShares = marketValue / newNetValue
     
     // [WHAT] 构建更新后的持仓记录，保留原有的其他字段
     const record: HoldingRecord = {

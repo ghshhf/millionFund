@@ -55,16 +55,17 @@ export async function recognizeText(
   }
 
   try {
-    // 优先使用中文+英文识别（适合含中文的截图），如失败则降级为英文
+    // 仅使用 eng 模型：chi_sim 在移动端（如 Android aarch64）容易 OOM，
+    // 且 chi_sim+eng 组合模型更重（~5MB vs ~2MB），在低端设备上频繁崩溃。
+    // 基金界面上的基金代码（6位数字）和金额（数字）用 eng 即可识别。
+    logger.info('OCR 识别开始，使用 eng 模型（Android 移动端优化，避免 OOM）')
     try {
-      const result = await (Tesseract as any).recognize(imageSource, 'chi_sim+eng', { logger: makeLogger() })
+      const result = await (Tesseract as any).recognize(imageSource, 'eng', { logger: makeLogger() })
       ;(globalThis as any).__lastOcrData = result.data
       return result.data.text
-    } catch (err) {
-      logger.warn('Tesseract chi_sim+eng 识别失败，降级到 eng', err)
-      const result2 = await (Tesseract as any).recognize(imageSource, 'eng', { logger: makeLogger() })
-      ;(globalThis as any).__lastOcrData = result2.data
-      return result2.data.text
+    } catch (err: any) {
+      logger.error('OCR 识别失败，请确保截图清晰并重试', err)
+      throw new Error('OCR 识别失败：' + (err?.message || '未知错误'))
     }
   } finally {
     if (onProgress) removeProgressListener(onProgress)

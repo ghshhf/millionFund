@@ -9,7 +9,6 @@ import { searchFund } from '@/api/fundFast'
 import { fetchFundEstimateFast } from '@/api/fundFast'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import type { FundInfo } from '@/types/fund'
-import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
