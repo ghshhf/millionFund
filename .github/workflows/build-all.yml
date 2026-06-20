@@ -1,4 +1,4 @@
-name: 全平台构建 (Web / Android / Windows / macOS / Linux)
+name: 全平台构建 (Web + Android)
 
 on:
   push:
@@ -102,99 +102,10 @@ jobs:
           name: AI百万实盘-Android-debug
           path: AI百万实盘-Android-debug.apk
 
-  # ─────────────────────────── Windows ─────────────────────────────
-  build-windows:
-    runs-on: windows-latest
-    name: 🪟 Windows (安装包)
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Web App
-        run: npm run build
-
-      - name: Build Windows Installer
-        run: npx electron-builder --win --x64
-
-      - name: Upload Windows 产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: AI百万实盘-Windows
-          path: release/desktop/*.exe
-
-  # ──────────────────────────── macOS ──────────────────────────────
-  build-macos:
-    runs-on: macos-latest
-    name: 🍎 macOS (DMG)
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Web App
-        run: npm run build
-
-      - name: Build macOS DMG
-        run: npx electron-builder --mac --x64 --arm64
-
-      - name: Upload macOS 产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: AI百万实盘-macOS
-          path: release/desktop/*.dmg
-
-  # ─────────────────────────── Linux ───────────────────────────────
-  build-linux:
-    runs-on: ubuntu-latest
-    name: 🐧 Linux (AppImage / deb)
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Web App
-        run: npm run build
-
-      - name: Build Linux AppImage & deb
-        run: npx electron-builder --linux --x64
-
-      - name: Upload Linux 产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: AI百万实盘-Linux
-          path: |
-            release/desktop/*.AppImage
-            release/desktop/*.deb
-
   # ───────────────────── 打 tag 时发布到 Releases ─────────────────
   release:
     name: 📦 发布到 GitHub Releases
-    needs: [build-web, build-android, build-windows, build-macos, build-linux]
+    needs: [build-web, build-android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -218,7 +129,7 @@ jobs:
   # ───────────────────── 每次 push main 发布开发版 ─────────────────
   release-dev:
     name: 📦 发布开发版到 GitHub Releases
-    needs: [build-web, build-android, build-windows, build-macos, build-linux]
+    needs: [build-web, build-android]
     if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
