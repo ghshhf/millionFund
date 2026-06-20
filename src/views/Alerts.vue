@@ -74,7 +74,7 @@
         </div>
 
         <!-- Web 版 -->
-        <div class="download-card" v-if="isWeb">
+        <div class="download-card" v-if="isWeb()">
           <div class="download-icon">🌐</div>
           <div class="download-info">
             <div class="download-name">Web 在线版</div>
@@ -141,8 +141,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
-import { APP_INFO, GITHUB_REPO, DOWNLOAD_URLS, RELEASES_URL, getBuildTime } from '@/config/release'
-import { getPlatform, isWeb, isAndroid, isElectron, isMobile } from '@/utils/platform'
+import { APP_INFO, GITHUB_REPO, DOWNLOAD_URLS, getBuildTime } from '@/config/release'
+import { getPlatform, isWeb, isAndroid } from '@/utils/platform'
 
 const router = useRouter()
 

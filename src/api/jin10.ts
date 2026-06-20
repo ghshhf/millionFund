@@ -253,7 +253,7 @@ function fallbackFlashList(): FlashItem[] {
   ]
 }
 
-function fallbackCalendarList(date: string): CalendarItem[] {
+function fallbackCalendarList(_date: string): CalendarItem[] {
   return [
     {
       id: '1',

@@ -3,7 +3,7 @@
 // [DEPS] 天天基金公开接口
 
 import { cache, CACHE_TTL } from './cache'
-import { persistCache } from './tiantianApi'
+import { persistCache, isTradingTime } from './tiantianApi'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 import { logger } from '@/utils/logger'
@@ -847,7 +847,8 @@ export async function fetchLatestNetValue(code: string): Promise<{
   date: string
   changeRate: number
 } | null> {
-  const cacheKey = `latest_nav_${code}`
+  // [WHAT] 缓存已禁用，始终获取最新净值
+  // const cacheKey = `latest_nav_${code}`
   // const cached = cache.get<{ netValue: number; date: string; changeRate: number }>(cacheKey)
   // if (cached) return cached
 

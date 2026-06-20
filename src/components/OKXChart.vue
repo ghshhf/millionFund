@@ -273,13 +273,6 @@ const hs300PerformanceChange = computed(() => {
   return performanceData.value[performanceData.value.length - 1]?.hs300Return || 0
 })
 
-// [WHAT] 调试信息
-const debugMessage = computed(() => {
-  const lastData = chartData.value[chartData.value.length - 1]
-  const lastPerf = performanceData.value[performanceData.value.length - 1]
-  return `基金数据:${chartData.value.length}条 | 沪深300:${hs300Data.value.length}条 | 业绩点:${performanceData.value.length}条 | 基金收益:${fundPerformanceChange.value.toFixed(2)}% | 沪深300收益:${hs300PerformanceChange.value.toFixed(2)}%`
-})
-
 // [WHAT] 统计数据
 const stats = computed(() => {
   const data = filteredData.value
@@ -580,14 +573,7 @@ function drawChart() {
   const height = rect.height
   
   // [WHAT] 布局：分时图占满高度，K线图有成交量区
-  let mainHeight: number
-  let volumeHeight: number
-  let volumeTop: number
-  
-  // [WHY] 曲线图布局：图表占满高度，不显示成交量
-  mainHeight = height - 25 // 留出底部X轴空间
-  volumeHeight = 0
-  volumeTop = height
+  const mainHeight = height - 25 // 留出底部X轴空间
   
   const padding = { top: 15, right: 60, bottom: 25, left: 55 }
   const chartWidth = width - padding.left - padding.right
@@ -618,10 +604,6 @@ function drawChart() {
   
   const valueRange = maxValue - minValue || 1
   
-  // 成交量范围
-  const volumes = data.map(d => (d as any).volume || 0)
-  const maxVolume = Math.max(...volumes, 1)
-  
   // ========== 绘制网格线 ==========
   ctx.strokeStyle = colors.gridColor
   ctx.lineWidth = 1
@@ -647,12 +629,10 @@ function drawChart() {
   }
   
   // ========== 绘制价格线/K线 ==========
-  const isUp = currentChange.value >= 0
   // [WHY] 国内股市/基金习惯：红涨绿跌
   const upColor = colors.upColor
   const downColor = colors.downColor
-  const lineColor = isUp ? upColor : downColor
-  
+
   // [WHY] 计算整体涨跌
   const chartBottom = mainHeight
   const firstValue = data[0]?.value || 0
@@ -836,7 +816,7 @@ function drawChart() {
         const alignRatio = fundFirstValue / hs300FirstValue
         
         // [WHAT] 计算对齐后的沪深300点
-        const hs300Points = filteredHS300.map((item, i) => {
+        const hs300Points = filteredHS300.map((item, _i) => {
           const x = padding.left + (chartWidth / Math.max(data.length - 1, 1)) * 
             (data.findIndex(d => d.time === item.time) / Math.max(data.length - 1, 1) * (data.length - 1))
           // [WHY] 对齐后的值 = 原始值 × 对齐比例

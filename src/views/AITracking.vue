@@ -170,7 +170,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { useAITrackingStore, type AITrackingRecord } from '@/stores/aiTracking'
 import { logger } from '@/utils/logger'
@@ -285,7 +285,7 @@ function handleTouchMove(event: TouchEvent) {
   })
 }
 
-function handleTouchEnd(event: TouchEvent) {
+function handleTouchEnd(_event: TouchEvent) {
   if (!touchDragging.value || uiMode.value !== 'simple') return
   
   // 执行排序
@@ -449,7 +449,7 @@ function deleteRecord(id: string) {
   showToast({ message: '删除成功', duration: 2000 })
 }
 
-function selectRecord(record: AITrackingRecord) {
+function selectRecord(_record: AITrackingRecord) {
   // 可以跳转到详情页或者显示更多信息
 }
 
@@ -561,23 +561,6 @@ function getChangeText(record: AITrackingRecord, type: 'sell' | 'buy') {
   if (!currentPrice || !nav) return '--'
   const change = ((currentPrice - nav) / nav) * 100
   return `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
-}
-
-function getCalcProcess(record: AITrackingRecord, type: 'sell' | 'buy') {
-  const code = type === 'sell' ? record.sellCode : record.buyCode
-  const nav = type === 'sell' ? record.sellNav : record.buyNav
-  const currentPrice = fundPrices.value[code]
-  
-  if (!currentPrice || !nav) return '--'
-  const change = ((currentPrice - nav) / nav) * 100
-  return `${currentPrice.toFixed(4)} - ${nav.toFixed(4)} = ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
-}
-
-function getMiddleText(text: string, len: number = 5): string {
-  if (!text) return ''
-  if (text.length <= len) return text
-  const start = Math.floor((text.length - len) / 2)
-  return text.substring(start, start + len)
 }
 
 function getCalcProcessCombined(record: AITrackingRecord) {

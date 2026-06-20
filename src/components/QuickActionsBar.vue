@@ -2,7 +2,7 @@
 // [WHY] 快捷操作栏组件 - 包含自动刷新开关、刷新按钮、日志复制、设置入口
 // [WHAT] 网页端和移动端有不同的布局
 
-const props = defineProps<{
+defineProps<{
   autoRefreshEnabled: boolean
 }>()
 

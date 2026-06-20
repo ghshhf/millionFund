@@ -11,7 +11,7 @@ import { useNetworkStore } from '@/stores/network'
 import { useFundStore } from '@/stores/fund'
 import { searchFund, fetchFundEstimate } from '@/api/fundFast'
 import { fetchLatestNetValue } from '@/api/fundFast'
-import { showConfirmDialog, showToast, showLoadingToast, closeToast, ActionSheet } from 'vant'
+import { showConfirmDialog, showToast, showLoadingToast, closeToast } from 'vant'
 import { getSourceLabel } from '@/config/sources'
 import { formatMoney, formatPercent, getChangeStatus } from '@/utils/format'
 import { saveHoldings, saveSourceFilter, getSourceFilter } from '@/utils/storage'
@@ -200,14 +200,7 @@ async function onRefresh() {
   showToast('刷新成功')
 }
 
-// [WHAT] 打开添加持仓弹窗
-function openAddDialog() {
-  isEditing.value = false
-  resetForm()
-  showAddDialog.value = true
-}
-
-
+// [WHAT] 跳转到基金详情
 
 // [WHAT] 删除持仓
 async function handleDelete(code: string) {
@@ -397,11 +390,6 @@ function openCostDialog(code: string) {
 //   }
 // }
 
-// [WHAT] 跳转到首页
-function goHome() {
-  router.push('/')
-}
-
 // [WHAT] 跳转到基金详情
 function goToDetail(code: string) {
   router.push(`/detail/${code}`)
@@ -470,7 +458,7 @@ function stopHoldLongPress() {
 }
 
 // [WHAT] 截图导入完成回调
-function onImported(count: number) {
+function onImported(_count: number) {
   // [WHAT] 导入完成后刷新持仓列表
   holdingStore.refreshEstimates()
 }
@@ -484,6 +472,7 @@ async function backupHoldings() {
   
   // 过滤掉运行时字段，只保留恢复数据所需的关键字段
   const holdingsForBackup = holdingStore.holdings.map(holding => {
+    /* eslint-disable @typescript-eslint/no-unused-vars */
     const { 
       // 运行时字段（不备份）
       loading, 
@@ -500,6 +489,7 @@ async function backupHoldings() {
       // 保留的字段
       ...rest 
     } = holding
+    /* eslint-enable @typescript-eslint/no-unused-vars */
     return rest
   })
   
@@ -572,6 +562,7 @@ function restoreHoldings() {
           
           // 处理持仓数据，移除运行时字段
           const processedHoldings = jsonData.holdings.map((holding: any) => {
+            /* eslint-disable @typescript-eslint/no-unused-vars */
             const { 
               marketValue, 
               profit, 
@@ -590,6 +581,7 @@ function restoreHoldings() {
               lastFeeDate,
               ...rest 
             } = holding
+            /* eslint-enable @typescript-eslint/no-unused-vars */
             
             const industrySectors = Array.isArray(rest.industrySectors) 
               ? rest.industrySectors.join(', ') 

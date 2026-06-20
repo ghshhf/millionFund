@@ -556,8 +556,7 @@ export function predictTrend(data: NetValuePoint[]): TrendPrediction | null {
   
   const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date))
   const values = sorted.map(p => p.value)
-  const n = values.length
-  
+
   // [WHAT] 计算移动平均线
   const ma5 = calculateMA(values, 5)
   const ma10 = calculateMA(values, 10)
@@ -571,7 +570,6 @@ export function predictTrend(data: NetValuePoint[]): TrendPrediction | null {
   
   // [WHAT] 分析信号
   const signals: TrendSignal[] = []
-  const lastPrice = values[n - 1]!
   const lastMa5 = ma5[ma5.length - 1]!
   const lastMa10 = ma10[ma10.length - 1]!
   const lastMa20 = ma20[ma20.length - 1]!

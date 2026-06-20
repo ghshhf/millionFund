@@ -8,7 +8,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFundStore } from '@/stores/fund'
 import { useHoldingStore } from '@/stores/holding'
 import { 
-  fetchFundEstimateFast, fetchLatestNetValue,
+  fetchLatestNetValue,
   fetchFundAccurateData,
   fetchTopHoldings,
   fetchIndustryAllocation,
@@ -29,7 +29,6 @@ import {
   predictTrend, calculateReturnAnalysis, calculateFundScore,
   type TrendPrediction, type ReturnAnalysis, type FundScore
 } from '@/utils/statistics'
-import { getFundNetValue } from '@/utils/storage'
 import { fetchNetValueHistoryFast } from '@/api/fundFast'
 import { logger } from '@/utils/logger'
 
@@ -65,6 +64,7 @@ const periodReturns = ref<PeriodReturnExt[]>([])
 const sectorInfo = ref<{ name: string; dayReturn: number } | null>(null)
 const similarFunds = ref<{ code: string; name: string; yearReturn: number }[]>([])
 const dividendRecords = ref<{ date: string; amount: number; type: string }[]>([])
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const announcements = ref<{ id: string; title: string; date: string; type: string; url: string }[]>([])
 
 // [WHAT] 最佳周期回报（用于顶部核心指标展示）
@@ -102,6 +102,7 @@ const estimatedRedemptionFee = computed(() => {
 })
 
 // [WHAT] 累计分红
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const totalDividend = computed(() => {
   return dividendRecords.value.reduce((s, r) => s + r.amount, 0)
 })
@@ -346,32 +347,7 @@ function goBack() {
   router.back()
 }
 
-// [WHAT] 切换到上一只/下一只基金
-function goPrevFund() {
-  const watchlist = fundStore.watchlist
-  const idx = watchlist.findIndex(f => f.code === fundCode.value)
-  if (idx > 0) {
-    router.replace(`/detail/${watchlist[idx - 1]!.code}`)
-  } else {
-    showToast('已是第一只')
-  }
-}
-
-function goNextFund() {
-  const watchlist = fundStore.watchlist
-  const idx = watchlist.findIndex(f => f.code === fundCode.value)
-  if (idx >= 0 && idx < watchlist.length - 1) {
-    router.replace(`/detail/${watchlist[idx + 1]!.code}`)
-  } else {
-    showToast('已是最后一只')
-  }
-}
-
-function goToSearch() {
-  router.push('/search')
-}
-
-// [WHAT] 底部操作 - 修改持仓（直接弹窗）
+// [WHAT] 底部操作
 function editHolding() {
   const holding = holdingInfo.value
   if (!holding) {
@@ -474,10 +450,6 @@ async function handleDelete() {
   } catch {
     // 用户取消
   }
-}
-
-function setReminder() {
-  router.push('/alerts')
 }
 
 function showTransactions() {
@@ -593,6 +565,7 @@ function searchSimilarFunds() {
 }
 
 // [WHAT] 打开公告链接
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function openAnnouncement(url: string) {
   if (url) {
     window.open(url, '_blank')

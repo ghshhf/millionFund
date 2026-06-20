@@ -42,7 +42,7 @@ const FALLBACK_HOLIDAYS: Record<string, string[]> = {
 }
 
 /** 运行时节假日集合 */
-let holidaySet = new Set<string>()
+const holidaySet = new Set<string>()
 let holidayInitialized = false
 
 /** 从兜底数据初始化 */
@@ -742,7 +742,7 @@ export async function fetchManagerRank(options: {
         }
       })
 
-      let items: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
+      const items: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
         managerId: m.name,
         name: m.name,
         company: m.company,
@@ -1531,7 +1531,6 @@ export async function fetchFundScale(fundCode: string): Promise<FundScale> {
   
   try {
     // [WHAT] 使用JSONP获取基金基本信息（包含规模）
-    const cbName = `scale_cb_${Date.now()}`
     const url = `https://fundgz.1234567.com.cn/js/${fundCode}.js?rt=${Date.now()}`
 
     // [WHAT] 尝试从估值接口获取规模信息

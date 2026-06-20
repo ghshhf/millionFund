@@ -1,0 +1,31 @@
+#!/bin/sh
+# [WHY] 推送前自动构建，确保不会把编译错误推上去
+# [WHAT] 运行 vue-tsc 类型检查 + vite build
+
+echo "🔍 推送前构建检查中..."
+
+# 只检查 main 分支
+BRANCH=$(git symbolic-ref HEAD 2>/dev/null | sed 's/refs\/heads\///')
+if [ "$BRANCH" != "main" ]; then
+  exit 0
+fi
+
+cd "$(dirname "$0")/.."
+
+# 运行类型检查
+npx vue-tsc --noEmit 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "❌ 类型检查失败！请修复 TS 错误后再推送。"
+  echo "   运行 npm run typecheck 查看具体错误"
+  exit 1
+fi
+
+# 运行构建
+npm run build 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "❌ 构建失败！请修复编译错误后再推送。"
+  echo "   运行 npm run build 查看具体错误"
+  exit 1
+fi
+
+echo "✅ 构建检查通过"
