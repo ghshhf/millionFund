@@ -6,7 +6,7 @@
 ![Vue](https://img.shields.io/badge/Vue-3.x-brightgreen.svg)
 ![Capacitor](https://img.shields.io/badge/Capacitor-7.x-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-全平台-green.svg)
-![Version](https://img.shields.io/badge/version-1.9.5-orange.svg)
+![Version](https://img.shields.io/badge/version-1.9.6-orange.svg)
 
 ## 核心功能
 
