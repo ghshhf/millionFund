@@ -66,6 +66,24 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/choice/, ''),
       },
+      // [WHY] 代理天天基金估值接口，解决 CORS 问题（开发环境）
+      '/api/fundgz': {
+        target: 'https://fundgz.1234567.com.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/fundgz/, ''),
+      },
+      // [WHY] 代理东方财富资讯接口，解决 CORS 问题（开发环境）
+      '/api/nplistapi': {
+        target: 'https://np-listapi.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/nplistapi/, ''),
+      },
+      // [WHY] 代理东方财富基金分红接口，解决 CORS 问题（开发环境）
+      '/api/apifund': {
+        target: 'https://api.fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/apifund/, ''),
+      },
     },
   },
 })

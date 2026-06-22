@@ -4,7 +4,6 @@
 
 import { cache, CACHE_TTL } from './cache'
 import { queueGlobalVarScript } from './fundFast'
-import { jsonpRequest } from './jsonp'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 import { handleApiError } from '@/utils/errorHandler'
@@ -1183,37 +1182,61 @@ export async function fetchFinanceNews(pageSize = 10): Promise<NewsItem[]> {
 }
 
 // [WHAT] 东方财富7x24快讯（实时性强）
+// [FIX] 改用代理 + fetch，避免 JSONP 脚本注入
 async function fetchEastmoney7x24(pageSize: number): Promise<NewsItem[]> {
-  const url = `https://np-listapi.eastmoney.com/comm/web/getStockNews?type=0&pageSize=${pageSize}`
-  const data = await jsonpRequest<any>(url, 'cb', 'news7x24', 5000)
+  const url = `/api/nplistapi/comm/web/getStockNews?type=0&pageSize=${pageSize}`
 
-  if (!data?.data?.list) return []
-  
-  return data.data.list.map((item: any) => ({
-    id: String(item.art_id || Date.now() + Math.random()),
-    title: item.title || '',
-    summary: (item.digest || item.title || '').slice(0, 80),
-    source: item.source || '7x24快讯',
-    time: formatNewsTime(item.showtime || ''),
-    url: item.url_unique || ''
-  })).filter((n: NewsItem) => n.title)
+  try {
+    const text = await http.text(url + '&_=' + Date.now())
+    // [WHAT] JSONP 响应格式：callbackName({...})，用正则提取 JSON 部分
+    const match = text.match(/^[a-zA-Z0-9_]+\(([\s\S]*)\)$/)
+    if (!match || !match[1]) return []
+
+    const data = JSON.parse(match[1])
+
+    if (!data?.data?.list) return []
+
+    return data.data.list.map((item: any) => ({
+      id: String(item.art_id || Date.now() + Math.random()),
+      title: item.title || '',
+      summary: (item.digest || item.title || '').slice(0, 80),
+      source: item.source || '7x24快讯',
+      time: formatNewsTime(item.showtime || ''),
+      url: item.url_unique || ''
+    })).filter((n: NewsItem) => n.title)
+  } catch (e) {
+    handleApiError(e, 'fetchEastmoney7x24', { silent: true })
+    return []
+  }
 }
 
 // [WHAT] 东方财富基金资讯
+// [FIX] 改用代理 + fetch，避免 JSONP 脚本注入
 async function fetchEastmoneyFundNews(pageSize: number): Promise<NewsItem[]> {
-  const url = `https://np-listapi.eastmoney.com/comm/wap/getListInfo?client=wap&type=5&pageSize=${pageSize}&pageIndex=0`
-  const data = await jsonpRequest<any>(url, 'cb', 'fundNews', 5000)
+  const url = `/api/nplistapi/comm/wap/getListInfo?client=wap&type=5&pageSize=${pageSize}&pageIndex=0`
 
-  if (!data?.data?.list) return []
-  
-  return data.data.list.map((item: any) => ({
-    id: item.art_uniqueUrl || String(Date.now() + Math.random()),
-    title: item.title || '',
-    summary: (item.digest || item.title || '').slice(0, 80),
-    source: item.source || '东方财富',
-    time: formatNewsTime(item.showtime || item.time || ''),
-    url: item.url || item.art_uniqueUrl || ''
-  })).filter((n: NewsItem) => n.title)
+  try {
+    const text = await http.text(url + '&_=' + Date.now())
+    // [WHAT] JSONP 响应格式：callbackName({...})，用正则提取 JSON 部分
+    const match = text.match(/^[a-zA-Z0-9_]+\(([\s\S]*)\)$/)
+    if (!match || !match[1]) return []
+
+    const data = JSON.parse(match[1])
+
+    if (!data?.data?.list) return []
+
+    return data.data.list.map((item: any) => ({
+      id: item.art_uniqueUrl || String(Date.now() + Math.random()),
+      title: item.title || '',
+      summary: (item.digest || item.title || '').slice(0, 80),
+      source: item.source || '东方财富',
+      time: formatNewsTime(item.showtime || item.time || ''),
+      url: item.url || item.art_uniqueUrl || ''
+    })).filter((n: NewsItem) => n.title)
+  } catch (e) {
+    handleApiError(e, 'fetchEastmoneyFundNews', { silent: true })
+    return []
+  }
 }
 
 // [WHAT] 格式化资讯时间
@@ -1306,30 +1329,28 @@ export interface DividendRecord {
  * [WHY] 投资者关心历史分红情况，评估基金收益分配能力
  * [HOW] 使用 JSONP 方式从天天基金 API 获取数据，避免 CORS 限制
  */
+// [FIX] 改用代理 + fetch，避免 JSONP 脚本注入
 export async function fetchDividendRecords(fundCode: string): Promise<DividendRecord[]> {
   const cacheKey = `dividend_${fundCode}`
   const cached = cache.get<DividendRecord[]>(cacheKey)
   if (cached) return cached
-  
+
   try {
-    // [WHAT] 使用 JSONP 接口获取分红数据
-    const cbName = `dividend_cb_${Date.now()}`
-    const jsonUrl = `https://api.fund.eastmoney.com/f10/fhsp?fundcode=${fundCode}&callback=${cbName}`
-    
-    const jsonResp = await jsonpRequest<any>(jsonUrl, 'callback', cbName) as { 
-      Datas?: { 
-        fhspList?: Array<{ 
-          DJRQ: string   // 登记日期
-          FFRQ: string   // 发放日期
-          CXRQ: string   // 除息日期
-          FHFCZ: number  // 分红金额
-          FHSP: string   // 分红说明
-        }> 
-      } 
-    } | null
-    
+    // [WHAT] 走代理，保留 callback 参数让服务端返回 JSONP 格式
+    const cbName = `de_cb_${Date.now()}`
+    const url = `/api/apifund/f10/fhsp?fundcode=${fundCode}&callback=${cbName}&_=${Date.now()}`
+    const text = await http.text(url)
+
+    // [WHAT] 解析 callbackName({...}) 格式，提取 JSON
+    const jsonStart = text.indexOf('({') + 1
+    const jsonEnd = text.lastIndexOf('})')
+    if (jsonStart < 0 || jsonEnd < 0) return []
+
+    const jsonStr = text.substring(jsonStart, jsonEnd + 1)
+    const jsonResp = JSON.parse(jsonStr)
+
     const records: DividendRecord[] = []
-    
+
     if (jsonResp?.Datas?.fhspList) {
       for (const item of jsonResp.Datas.fhspList) {
         records.push({
@@ -1341,11 +1362,11 @@ export async function fetchDividendRecords(fundCode: string): Promise<DividendRe
         })
       }
     }
-    
+
     cache.set(cacheKey, records, CACHE_TTL.LONG)
     return records
-  } catch (error) {
-    logger.error('[API] 获取分红记录失败', error)
+  } catch (e) {
+    handleApiError(e, `fetchDividendRecords(${fundCode})`, { silent: true })
     return []
   }
 }
