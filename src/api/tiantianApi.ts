@@ -80,10 +80,8 @@ async function fetchYearHolidaysFromApi(year: number): Promise<void> {
 
   for (const apiUrl of apiSources) {
     try {
-      const data = await http.json<{
-        code: number
-        holiday?: Record<string, { holiday: boolean; name: string; date: string }>
-      }>(apiUrl)
+      // [WHY] 多 API 源返回格式不同：timor.tech 用 .holiday，apihubs.cn/mxnz.cn 用 .data
+      const data = await http.json<Record<string, any>>(apiUrl)
 
       // [WHAT] 适配不同 API 返回格式
       let holidayData: Record<string, { holiday: boolean; name: string; date: string }> | null = null
@@ -300,7 +298,8 @@ export function initMobileDefaultCache(): void {
 export async function fetchWithPersistCache<T>(
   key: string,
   fetcher: () => Promise<T>,
-  validator: (data: T) => boolean = () => true
+  validator: (data: T) => boolean = () => true,
+  ttlMs: number = 3600000
 ): Promise<T | null> {
   // [WHAT] 检查内存缓存
   const memCached = cache.get<T>(key)
