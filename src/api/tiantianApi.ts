@@ -7,6 +7,7 @@ import { queueGlobalVarScript } from './fundFast'
 import { jsonpRequest } from './jsonp'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
+import { handleApiError } from '@/utils/errorHandler'
 
 // ========== 交易时间和持久化缓存工具 ==========
 
