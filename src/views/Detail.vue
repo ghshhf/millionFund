@@ -21,7 +21,7 @@ import {
   type PeriodReturnExt,
   fetchPeriodReturnExt,
   fetchDividendRecords,
-  fetchAnnouncements,
+  fetchFundAnnouncements,
 } from '@/api/tiantianApi'
 import { fetchFundFees, type FundFeeInfo } from '@/api/tiantianApi'
 import { sourceOptions as configSourceOptions, getSourceLabel } from '@/config/sources'
@@ -273,7 +273,7 @@ async function loadFundDetails() {
       fetchPeriodReturnExt(code).catch(() => []),
       fetchFundFees(code).catch(() => null),
       fetchDividendRecords(code).catch(() => []),
-      fetchAnnouncements(code).catch(() => []),
+      fetchFundAnnouncements(code).catch(() => []),
     ])
 
     // [WHAT] 重仓股票 - 转换格式适配模板

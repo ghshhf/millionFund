@@ -3,12 +3,12 @@
 // [DEPS] 天天基金公开接口
 
 import { cache, CACHE_TTL } from './cache'
-import { persistCache, isTradingTime } from './tiantianApi'
+import { isTradingTime } from './tiantianApi'
+import { persistCache } from '../utils/persistCache'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
-// jsonp 已弃用，改用 fetch + text 解析
+import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
-import { handleApiError } from '@/utils/errorHandler'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
@@ -150,7 +150,39 @@ const pendingNetValueRequests: {
   timeout: ReturnType<typeof setTimeout>
 }[] = []
 
-// [FIX] registerJsonpHandler 已移除（JSONP 安全修复），fetchFundEstimateFast/fetchLatestNetValue 改用 fetch+text 解析
+registerJsonpHandler((data: any) => {
+  // [WHY] 防御性检查：data 或 fundcode 可能为 undefined
+  // [EDGE] 某些基金类型（ETF联接、期货）不支持估值，会返回 undefined
+  if (!data || !data.fundcode) {
+    return  // 静默忽略，不输出警告
+  }
+  const index = pendingRequests.findIndex(req => req.code === data.fundcode)
+  if (index !== -1) {
+    const req = pendingRequests[index]!
+    clearTimeout(req.timeout)
+    pendingRequests.splice(index, 1)
+    req.resolve(data)
+    return
+  }
+
+  // [WHAT] 处理净值请求
+  const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
+  if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
+    const req = pendingNetValueRequests[navIndex]!
+    clearTimeout(req.timeout)
+    pendingNetValueRequests.splice(navIndex, 1)
+
+    // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
+    // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
+    const result = {
+      netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
+      date: data.jzrq || '',
+      changeRate: parseFloat(data.gszzl || '0') || 0
+    }
+    req.resolve(result)
+  }
+  // [NOTE] 未匹配的响应静默忽略，可能是重复响应或超时后的响应
+})
 
 // ========== 实时估值API（优化版） ==========
 
@@ -176,50 +208,54 @@ export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
 
   return withConcurrencyControl(() => {
     return new Promise((resolve, reject) => {
-      // [FIX] 使用 fetch + text 替代 script 注入（JSONP 安全修复）
-      // 走 Vite 代理 /api/fundgz，开发环境避免 CORS 问题
-      const controller = new AbortController()
-      const fetchTimeout = setTimeout(() => controller.abort(), 8000)
+      initJsonpCallback()
 
-      fetch(`/api/fundgz/js/${code}.js?rt=${Date.now()}`, { signal: controller.signal })
-        .then(async res => {
-          clearTimeout(fetchTimeout)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return await res.text()
-        })
-        .then(text => {
-          cleanup()
-          // 解析 jsonpgz({...}) 格式，避免执行第三方 JS
-          const match = text.match(/jsonpgz\((\{[\s\S]*\})\)/)
-          if (!match || !match[1]) {
-            throw new Error('Invalid jsonpgz response')
-          }
-          const data = JSON.parse(match[1])
+      const scriptId = `fund_${code}_${Date.now()}`
+      const timeout = setTimeout(() => {
+        cleanup()
+        const idx = pendingRequests.findIndex(r => r.code === code)
+        if (idx !== -1) pendingRequests.splice(idx, 1)
+        // [EDGE] 超时时使用持久化缓存
+        reject(new Error(`超时: ${code}`))
+      }, 8000)
 
-          const idx = pendingRequests.findIndex(r => r.code === code)
-          if (idx !== -1) {
-            const req = pendingRequests[idx]
-            clearTimeout(req.timeout)
-            pendingRequests.splice(idx, 1)
-            req.resolve(data)
-          }
-        })
-        .catch(err => {
-          cleanup()
-          clearTimeout(fetchTimeout)
-          const idx = pendingRequests.findIndex(r => r.code === code)
-          if (idx !== -1) {
-            const req = pendingRequests[idx]
-            clearTimeout(req.timeout)
-            pendingRequests.splice(idx, 1)
-            // [EDGE] 失败时使用持久化缓存
-            if (persisted) {
-              req.resolve(persisted)
-            } else {
-              req.reject(err)
-            }
-          }
-        })
+      pendingRequests.push({
+        code,
+        resolve: (data) => {
+          cache.set(cacheKey, data, CACHE_TTL.ESTIMATE)
+          persistCache.set(cacheKey, data) // 保存到持久化缓存
+          resolve(data)
+        },
+        reject: (err) => {
+          // [EDGE] 失败时使用持久化缓存
+          reject(err)
+        },
+        timeout
+      })
+
+      function cleanup() {
+        const s = document.getElementById(scriptId)
+        if (s) document.body.removeChild(s)
+      }
+
+      const script = document.createElement('script')
+      script.id = scriptId
+      script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
+      script.onerror = () => {
+        // [NOTE] 静默处理脚本加载失败，某些基金类型不支持估值
+        cleanup()
+        const idx = pendingRequests.findIndex(r => r.code === code)
+        if (idx !== -1) {
+          clearTimeout(pendingRequests[idx]!.timeout)
+          pendingRequests.splice(idx, 1)
+        }
+        // [EDGE] 失败时使用持久化缓存
+        reject(new Error(`失败: ${code}`))
+      }
+      script.onload = () => {
+        setTimeout(cleanup, 100)
+      }
+      document.body.appendChild(script)
     })
   })
 }
@@ -563,7 +599,7 @@ export async function fetchIntradayData(code: string, forceRefresh = false): Pro
     }
     return null
   } catch (e) {
-    handleApiError(e, `/newfund/fundsmsgz/getSmsgz?symbol=jj${code}`, { silent: true })
+    logger.error('获取分时数据失败', { code, error: e })
     return null
   }
 }
@@ -790,45 +826,15 @@ export async function fetchFundBasicInfo(code: string): Promise<{
       if (script) document.body.removeChild(script)
     }
 
-    // [FIX] 使用 fetch + text 替代 script 注入（JSONP 安全修复）
-    // 走 Vite 代理 /api/fundmobapi，开发环境避免 CORS 问题
-    const controller = new AbortController()
-    const fetchTimeout = setTimeout(() => controller.abort(), 8000)
-
-    fetch(`/api/fundmobapi/FundMNewApi/FundMNFInfo?FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`, { signal: controller.signal })
-      .then(async res => {
-        clearTimeout(fetchTimeout)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return await res.text()
-      })
-      .then(text => {
-        // 解析 callbackName({...}) 格式，避免执行第三方 JS
-        const match = text.match(new RegExp(`^${callbackName}\\((\\{[\\s\\S]*\\})\\)`))
-        if (!match || !match[1]) throw new Error('Invalid fundmobapi response')
-        const data = JSON.parse(match[1])
-
-        if (!data || !data.Datas) {
-          resolve(null)
-          return
-        }
-
-        const d = data.Datas
-        const result = {
-          name: d.SHORTNAME || d.FSHORTNAME || '',
-          netValue: parseFloat(d.DWJZ) || 0,
-          changeRate: parseFloat(d.RZDF) || 0,
-          updateTime: d.FSRQ || ''
-        }
-
-        if (result.name) {
-          cache.set(cacheKey, result, CACHE_TTL.FUND_DETAIL)
-        }
-        resolve(result)
-      })
-      .catch(() => {
-        clearTimeout(fetchTimeout)
-        resolve(null)
-      })
+    const script = document.createElement('script')
+    script.id = callbackName
+    // [DEPS] 东方财富基金详情接口
+    script.src = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?callback=${callbackName}&FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`
+    script.onerror = () => {
+      cleanup()
+      resolve(null)
+    }
+    document.body.appendChild(script)
   })
 }
 
@@ -847,55 +853,64 @@ export async function fetchLatestNetValue(code: string): Promise<{
   const cached = cache.get<{ netValue: number; date: string; changeRate: number }>(cacheKey)
   if (cached) return cached
 
-    // [FIX] 使用 fetch + text 替代 script 注入（JSONP 安全修复）
-    // 走 Vite 代理 /api/fundgz，开发环境避免 CORS 问题
-    const controller = new AbortController()
-    const fetchTimeout = setTimeout(() => controller.abort(), 10000)
+  initJsonpCallback()
 
-    fetch(`/api/fundgz/js/${code}.js?rt=${Date.now()}`, { signal: controller.signal })
-      .then(res => {
-        clearTimeout(fetchTimeout)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.text()
-      })
-      .then(text => {
-        // 解析 jsonpgz({...}) 格式，避免执行第三方 JS
-        const match = text.match(/jsonpgz\((\{[\s\S]*)\})\)/)
-        if (!match || !match[1]) {
-          throw new Error('Invalid jsonpgz response')
-        }
-        const data = JSON.parse(match[1])
+  // [WHAT] 保存 cacheKey 到局部变量，避免闭包捕获变化
+  const currentCacheKey = cacheKey
 
-        cleanup()
-        const index = pendingNetValueRequests.findIndex(req => req.code === code)
-        if (index !== -1) {
-          const req = pendingNetValueRequests[index]
-          clearTimeout(req.timeout)
-          pendingNetValueRequests.splice(index, 1)
-          req.resolve({
-            netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
-            date: data.jzrq || '',
-            changeRate: parseFloat(data.gszzl || '0') || 0
-          })
+  return new Promise((resolve) => {
+    const scriptId = `nav_${code}_${Date.now()}`
+    const timeout = setTimeout(() => {
+      cleanup()
+      // [EDGE] 从队列中移除超时的请求
+      const index = pendingNetValueRequests.findIndex(req => req.code === code)
+      if (index !== -1) {
+        pendingNetValueRequests.splice(index, 1)
+      }
+      resolve(null)
+    }, 10000)
+
+    // [WHAT] 添加到待处理队列（resolve 时设置缓存）
+    pendingNetValueRequests.push({
+      code,
+      resolve: (data) => {
+        // [WHAT] 成功获取数据后设置缓存
+        if (data) {
+          cache.set(currentCacheKey, data, CACHE_TTL.ESTIMATE)
         }
-      })
-      .catch(err => {
-        clearTimeout(fetchTimeout)
+        resolve(data)
+      },
+      reject: () => { },
+      timeout
+    })
+
+    function cleanup() {
+      const script = document.getElementById(scriptId)
+      if (script) {
+        document.body.removeChild(script)
+      }
+    }
+
+    const script = document.createElement('script')
+    script.id = scriptId
+    // [DEPS] 基金估值接口，返回实时估值数据，使用固定的 jsonpgz 回调函数名
+    script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
+    script.onerror = () => {
+      cleanup()
+      const index = pendingNetValueRequests.findIndex(req => req.code === code)
+      if (index !== -1 && pendingNetValueRequests[index]) {
+        clearTimeout(pendingNetValueRequests[index]!.timeout)
+        pendingNetValueRequests.splice(index, 1)
+      }
+      resolve(null)
+    }
+    script.onload = () => {
+      // [FIX] 不要立即清理脚本，让回调有时间执行
+      setTimeout(() => {
         cleanup()
-        const index = pendingNetValueRequests.findIndex(req => req.code === code)
-        if (index !== -1) {
-          const req = pendingNetValueRequests[index]
-          clearTimeout(req.timeout)
-          pendingNetValueRequests.splice(index, 1)
-          // [EDGE] 失败时使用持久化缓存
-          const cached = persistCache.get<{ netValue: number; date: string; changeRate: number }>(currentCacheKey)
-          if (cached) {
-            req.resolve(cached)
-          } else {
-            req.resolve(null)
-          }
-        }
-      })
+      }, 500)
+    }
+    document.body.appendChild(script)
   })
 }
 
@@ -1442,6 +1457,8 @@ export async function fetchGlobalIndices(): Promise<GlobalIndex[]> {
   const cached = cache.get<GlobalIndex[]>(cacheKey)
   if (cached) return cached
 
+  // [WHAT] 东方财富全球指数代码
+  // 格式: 市场代码.指数代码
   const indices = [
     { code: '1.000001', name: '上证指数', region: 'cn' as const },
     { code: '0.399001', name: '深证成指', region: 'cn' as const },
@@ -1453,33 +1470,60 @@ export async function fetchGlobalIndices(): Promise<GlobalIndex[]> {
     { code: '100.N225', name: '日经225', region: 'asia' as const },
   ]
 
+  const results: GlobalIndex[] = []
+
   try {
     const codes = indices.map(i => i.code).join(',')
-    const url = `https://push2.eastmoney.com/api/qt/list.np/get?secids=${codes}&fields=f2,f3,f4,f12,f14&_${Date.now()}`
-    const data = await http.get<{ data?: { diff?: any[] } }>(url)
+    const callbackName = `globalIdx_${Date.now()}`
 
-    const results: GlobalIndex[] = []
-    if (data?.data?.diff) {
-      data.data.diff.forEach((item: any, idx: number) => {
-        if (indices[idx] && item.f2 > 0) {
-          results.push({
-            name: indices[idx].name,
-            code: indices[idx].code,
-            price: item.f2 / 100,
-            change: item.f4 / 100,
-            changePercent: item.f3 / 100,
-            region: indices[idx].region
-          })
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => { cleanup(); resolve() }, 8000)
+
+        // [WHAT] 设置 JSONP 回调
+        ; (window as any)[callbackName] = (data: any) => {
+          cleanup()
+          try {
+            if (data?.data?.diff) {
+              data.data.diff.forEach((item: any, idx: number) => {
+                if (indices[idx] && item.f2 > 0) {
+                  results.push({
+                    name: indices[idx].name,
+                    code: indices[idx].code,
+                    price: item.f2 / 100,  // 价格需要除以100
+                    change: item.f4 / 100, // 涨跌额
+                    changePercent: item.f3 / 100, // 涨跌幅
+                    region: indices[idx].region
+                  })
+                }
+              })
+            }
+          } catch { /* ignore */ }
+          resolve()
         }
-      })
-    }
+
+      const script = document.createElement('script')
+      script.id = callbackName
+      // [DEPS] 东方财富行情接口
+      script.src = `https://push2.eastmoney.com/api/qt/ulist.np/get?secids=${codes}&fields=f2,f3,f4,f12,f14&cb=${callbackName}&_=${Date.now()}`
+
+      script.onerror = () => { cleanup(); resolve() }
+
+      function cleanup() {
+        clearTimeout(timeout)
+        const s = document.getElementById(callbackName)
+        if (s) document.body.removeChild(s)
+        try { delete (window as any)[callbackName] } catch { /* */ }
+      }
+
+      document.body.appendChild(script)
+    })
 
     if (results.length === 0) return getDefaultGlobalIndices()
 
     cache.set(cacheKey, results, CACHE_TTL.MARKET_INDEX)
     return results
   } catch (e) {
-    handleApiError(e, 'fetchGlobalIndices', { silent: true })
+    logger.warn('[fundFast] 获取全球指数失败', e)
     return getDefaultGlobalIndices()
   }
 }
