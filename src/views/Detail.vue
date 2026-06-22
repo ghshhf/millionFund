@@ -17,9 +17,11 @@ import {
 } from '@/api/fundFast'
 import type { FundEstimate } from '@/types/fund'
 import type { IndustryAllocation, AssetAllocation, FundRating } from '@/api/fundFast'
-import { 
+import {
   type PeriodReturnExt,
   fetchPeriodReturnExt,
+  fetchDividendRecords,
+  fetchAnnouncements,
 } from '@/api/tiantianApi'
 import { fetchFundFees, type FundFeeInfo } from '@/api/tiantianApi'
 import { sourceOptions as configSourceOptions, getSourceLabel } from '@/config/sources'
@@ -263,13 +265,15 @@ async function loadFundDetails() {
 
   try {
     // [WHAT] 并行加载不需要依赖顺序的数据
-    const [holdingsResult, industryData, assetData, ratingResult, periodResult, feesResult] = await Promise.all([
+    const [holdingsResult, industryData, assetData, ratingResult, periodResult, feesResult, dividendResult, announcementResult] = await Promise.all([
       fetchTopHoldings(code).catch(() => []),
       fetchIndustryAllocation(code).catch(() => []),
       fetchAssetAllocation(code).catch(() => null),
       fetchFundRating(code).catch(() => null),
       fetchPeriodReturnExt(code).catch(() => []),
       fetchFundFees(code).catch(() => null),
+      fetchDividendRecords(code).catch(() => []),
+      fetchAnnouncements(code).catch(() => []),
     ])
 
     // [WHAT] 重仓股票 - 转换格式适配模板
@@ -296,6 +300,12 @@ async function loadFundDetails() {
 
     // [WHAT] 费率信息
     fundFees.value = feesResult
+
+    // [WHAT] 分红记录
+    dividendRecords.value = dividendResult
+
+    // [WHAT] 基金公告
+    announcements.value = announcementResult
 
   } catch (err) {
     // 单个模块加载失败不影响整体页面
@@ -1155,14 +1165,15 @@ function formatPercent(num: number): string {
     </div>
 
    
-    <!-- <div class="info-section">
+    <!-- ========== 分红记录 ========== -->
+    <div class="info-section" v-if="dividendRecords.length > 0">
       <div class="section-header">
         <span>分红记录</span>
         <span class="section-tip" v-if="dividendRecords.length > 0">
           累计{{ dividendRecords.length }}次，共{{ totalDividend.toFixed(4) }}元/份
         </span>
       </div>
-      <div v-if="dividendRecords.length > 0" class="dividend-list">
+      <div class="dividend-list">
         <div 
           v-for="(record, idx) in dividendRecords.slice(0, 5)" 
           :key="idx"
@@ -1176,15 +1187,14 @@ function formatPercent(num: number): string {
           还有{{ dividendRecords.length - 5 }}条记录...
         </div>
       </div>
-      <div v-else class="empty-hint">暂无分红记录</div>
-    </div> -->
+    </div>
 
     <!-- ========== 基金公告 ========== -->
-    <!-- <div class="info-section">
+    <div class="info-section" v-if="announcements.length > 0">
       <div class="section-header">
         <span>基金公告</span>
       </div>
-      <div v-if="announcements.length > 0" class="announcement-list">
+      <div class="announcement-list">
         <div 
           v-for="item in announcements.slice(0, 5)" 
           :key="item.id"
@@ -1201,8 +1211,7 @@ function formatPercent(num: number): string {
           <van-icon name="arrow" class="announcement-arrow" />
         </div>
       </div>
-      <div v-else class="empty-hint">暂无公告</div>
-    </div> -->
+    </div>
 
     <!-- 底部操作栏 -->
     <div class="bottom-bar">
