@@ -6,7 +6,7 @@
 ![Vue](https://img.shields.io/badge/Vue-3.x-brightgreen.svg)
 ![Capacitor](https://img.shields.io/badge/Capacitor-7.x-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-全平台-green.svg)
-![Version](https://img.shields.io/badge/version-1.9.6-orange.svg)
+![Version](https://img.shields.io/badge/version-1.9.7-orange.svg)
 
 ## 核心功能
 
@@ -31,6 +31,15 @@
 自动化流程：每次提交自动触发 GitHub Actions 多平台并行构建，打 tag 时自动发布到 Releases。
 
 ## 更新记录
+
+### v1.9.7 (2026-06-23)
+
+- **JSONP 安全修复**：`fetchFundEstimateFast` / `fetchLatestNetValue` / `fetchFundDetail` 改为 `fetch + text() + 正则解析`，彻底移除 `<script>` 动态注入风险
+- **统一错误处理架构**：新增 `src/utils/errorHandler.ts`，所有 API 调用统一走 `handleApiError`，用户提示更友好
+- **启用详情页功能**：`Detail.vue` 分红记录和基金公告功能解除注释并接入数据源
+- **ESLint 零警告**：修复所有类型检查和代码风格警告
+- **Vite 代理完善**：新增 `/api/fundgz`、`/api/fundmobapi` 代理配置，开发环境彻底告别 JSONP
+- **Git 历史清理**：使用 `git filter-repo` 清除敏感数据，仓库历史干净合规
 
 ### v1.9.0 (2026-06-14)
 
