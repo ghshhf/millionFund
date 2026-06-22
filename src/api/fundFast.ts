@@ -5,7 +5,7 @@
 import { cache, CACHE_TTL } from './cache'
 import { persistCache, isTradingTime } from './tiantianApi'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
-import { initJsonpCallback, registerJsonpHandler } from './jsonp'
+// jsonp 已弃用，改用 fetch + text 解析
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 import { handleApiError } from '@/utils/errorHandler'
@@ -150,39 +150,7 @@ const pendingNetValueRequests: {
   timeout: ReturnType<typeof setTimeout>
 }[] = []
 
-registerJsonpHandler((data: any) => {
-  // [WHY] 防御性检查：data 或 fundcode 可能为 undefined
-  // [EDGE] 某些基金类型（ETF联接、期货）不支持估值，会返回 undefined
-  if (!data || !data.fundcode) {
-    return  // 静默忽略，不输出警告
-  }
-  const index = pendingRequests.findIndex(req => req.code === data.fundcode)
-  if (index !== -1) {
-    const req = pendingRequests[index]!
-    clearTimeout(req.timeout)
-    pendingRequests.splice(index, 1)
-    req.resolve(data)
-    return
-  }
-
-  // [WHAT] 处理净值请求
-  const navIndex = pendingNetValueRequests.findIndex(req => req.code === data.fundcode)
-  if (navIndex !== -1 && pendingNetValueRequests[navIndex]) {
-    const req = pendingNetValueRequests[navIndex]!
-    clearTimeout(req.timeout)
-    pendingNetValueRequests.splice(navIndex, 1)
-
-    // [WHY] 优先使用 dwjz（最新公布净值），而非 gsz（实时估值）
-    // [WHY] 交易时间内账户显示的收益是基于昨日净值计算的，使用估值会导致成本净值和份额计算不准确
-    const result = {
-      netValue: parseFloat(data.dwjz || data.gsz || '0') || 0,
-      date: data.jzrq || '',
-      changeRate: parseFloat(data.gszzl || '0') || 0
-    }
-    req.resolve(result)
-  }
-  // [NOTE] 未匹配的响应静默忽略，可能是重复响应或超时后的响应
-})
+// [FIX] registerJsonpHandler 已移除（JSONP 安全修复），fetchFundEstimateFast/fetchLatestNetValue 改用 fetch+text 解析
 
 // ========== 实时估值API（优化版） ==========
 
@@ -822,15 +790,45 @@ export async function fetchFundBasicInfo(code: string): Promise<{
       if (script) document.body.removeChild(script)
     }
 
-    const script = document.createElement('script')
-    script.id = callbackName
-    // [DEPS] 东方财富基金详情接口
-    script.src = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?callback=${callbackName}&FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`
-    script.onerror = () => {
-      cleanup()
-      resolve(null)
-    }
-    document.body.appendChild(script)
+    // [FIX] 使用 fetch + text 替代 script 注入（JSONP 安全修复）
+    // 走 Vite 代理 /api/fundmobapi，开发环境避免 CORS 问题
+    const controller = new AbortController()
+    const fetchTimeout = setTimeout(() => controller.abort(), 8000)
+
+    fetch(`/api/fundmobapi/FundMNewApi/FundMNFInfo?FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`, { signal: controller.signal })
+      .then(async res => {
+        clearTimeout(fetchTimeout)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return await res.text()
+      })
+      .then(text => {
+        // 解析 callbackName({...}) 格式，避免执行第三方 JS
+        const match = text.match(new RegExp(`^${callbackName}\\((\\{[\\s\\S]*\\})\\)`))
+        if (!match || !match[1]) throw new Error('Invalid fundmobapi response')
+        const data = JSON.parse(match[1])
+
+        if (!data || !data.Datas) {
+          resolve(null)
+          return
+        }
+
+        const d = data.Datas
+        const result = {
+          name: d.SHORTNAME || d.FSHORTNAME || '',
+          netValue: parseFloat(d.DWJZ) || 0,
+          changeRate: parseFloat(d.RZDF) || 0,
+          updateTime: d.FSRQ || ''
+        }
+
+        if (result.name) {
+          cache.set(cacheKey, result, CACHE_TTL.FUND_DETAIL)
+        }
+        resolve(result)
+      })
+      .catch(() => {
+        clearTimeout(fetchTimeout)
+        resolve(null)
+      })
   })
 }
 

@@ -7,6 +7,7 @@ import { queueGlobalVarScript } from './fundFast'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 import { handleApiError } from '@/utils/errorHandler'
+import { persistCache } from '../utils/persistCache'
 
 // ========== 交易时间和持久化缓存工具 ==========
 
@@ -258,22 +259,7 @@ export function hasMarketOpenedToday(): boolean {
 /**
  * 持久化缓存工具
  * [WHY] 将数据保存到 localStorage，开盘前可以使用昨天的数据
- */
-export const persistCache = {
-  get<T>(key: string): T | null {
-    try {
-      const data = localStorage.getItem(`fund_${key}`)
-      if (data) return JSON.parse(data)
-    } catch {}
-    return null
-  },
-  
-  set<T>(key: string, data: T): void {
-    try {
-      localStorage.setItem(`fund_${key}`, JSON.stringify(data))
-    } catch {}
-  }
-}
+ *
 
 /**
  * [WHAT] 初始化移动端默认缓存数据
@@ -304,7 +290,7 @@ export function initMobileDefaultCache(): void {
     ]
   }
   
-  persistCache.set(cacheKey, defaultData)
+  persistCache.set(cacheKey, defaultData, 3600000)
 }
 
 /**
@@ -334,7 +320,7 @@ export async function fetchWithPersistCache<T>(
     const data = await fetcher()
     if (data && validator(data)) {
       cache.set(key, data, CACHE_TTL.MARKET_INDEX)
-      persistCache.set(key, data)
+      persistCache.set(key, data, ttlMs)
       return data
     }
     // [EDGE] 新数据无效，使用缓存

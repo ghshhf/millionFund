@@ -84,6 +84,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/apifund/, ''),
       },
+      // [WHY] 代理东方财富基金详情接口，解决 JSONP 安全风险
+      '/api/fundmobapi': {
+        target: 'https://fundmobapi.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/fundmobapi/, ''),
+      },
     },
   },
 })
