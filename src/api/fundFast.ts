@@ -8,6 +8,7 @@ import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
 import { initJsonpCallback, registerJsonpHandler } from './jsonp'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
+import { handleApiError } from '@/utils/errorHandler'
 
 // [WHAT] 清除指定基金的缓存数据
 export function clearFundCache(code: string): void {
@@ -598,7 +599,7 @@ export async function fetchIntradayData(code: string, forceRefresh = false): Pro
     }
     return null
   } catch (e) {
-    logger.error('获取分时数据失败', { code, error: e })
+    handleApiError(e, `/newfund/fundsmsgz/getSmsgz?symbol=jj${code}`, { silent: true })
     return null
   }
 }
