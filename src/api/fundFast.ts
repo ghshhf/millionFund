@@ -847,12 +847,15 @@ export async function fetchLatestNetValue(code: string): Promise<{
   date: string
   changeRate: number
 } | null> {
-  // [WHAT] 缓存已禁用，始终获取最新净值
-  // const cacheKey = `latest_nav_${code}`
-  // const cached = cache.get<{ netValue: number; date: string; changeRate: number }>(cacheKey)
-  // if (cached) return cached
+  // [WHAT] 恢复缓存逻辑，避免重复请求
+  const cacheKey = `latest_nav_${code}`
+  const cached = cache.get<{ netValue: number; date: string; changeRate: number }>(cacheKey)
+  if (cached) return cached
 
   initJsonpCallback()
+
+  // [WHAT] 保存 cacheKey 到局部变量，避免闭包捕获变化
+  const currentCacheKey = cacheKey
 
   return new Promise((resolve) => {
     const scriptId = `nav_${code}_${Date.now()}`
@@ -866,8 +869,19 @@ export async function fetchLatestNetValue(code: string): Promise<{
       resolve(null)
     }, 10000)
 
-    // [WHAT] 添加到待处理队列
-    pendingNetValueRequests.push({ code, resolve, reject: () => { }, timeout })
+    // [WHAT] 添加到待处理队列（resolve 时设置缓存）
+    pendingNetValueRequests.push({
+      code,
+      resolve: (data) => {
+        // [WHAT] 成功获取数据后设置缓存
+        if (data) {
+          cache.set(currentCacheKey, data, CACHE_TTL.ESTIMATE)
+        }
+        resolve(data)
+      },
+      reject: () => { },
+      timeout
+    })
 
     function cleanup() {
       const script = document.getElementById(scriptId)

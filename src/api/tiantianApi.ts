@@ -70,30 +70,74 @@ async function fetchYearHolidaysFromApi(year: number): Promise<void> {
     return
   }
 
-  try {
-    const data = await http.json<{
-      code: number
-      holiday?: Record<string, { holiday: boolean; name: string; date: string }>
-    }>(`https://timor.tech/api/holiday/year/${year}`)
+  // [WHAT] 备用 API 源列表（按优先级排序）
+  const apiSources = [
+    `https://timor.tech/api/holiday/year/${year}`,
+    `https://api.apihubs.cn/holiday/get?year=${year}`,
+    `https://www.mxnz.cn/api/holiday?year=${year}`
+  ]
 
-    if (data?.code !== 0 || !data?.holiday) {
-      logger.warn(`[holiday] API 返回异常 ${year}`, data)
-      return
-    }
+  for (const apiUrl of apiSources) {
+    try {
+      const data = await http.json<{
+        code: number
+        holiday?: Record<string, { holiday: boolean; name: string; date: string }>
+      }>(apiUrl)
 
-    const holidayDates: string[] = []
-    for (const [dateStr, info] of Object.entries(data.holiday)) {
-      if (info.holiday) {
-        holidaySet.add(dateStr)
-        holidayDates.push(dateStr)
+      // [WHAT] 适配不同 API 返回格式
+      let holidayData: Record<string, { holiday: boolean; name: string; date: string }> | null = null
+      
+      if (apiUrl.includes('timor.tech')) {
+        if (data?.code === 0 && data?.holiday) {
+          holidayData = data.holiday
+        }
+      } else if (apiUrl.includes('apihubs.cn')) {
+        // apihubs.cn 返回格式：{ code: 200, data: [{ date: '2026-01-01', holiday: 1 }] }
+        if (data?.code === 200 && Array.isArray(data?.data)) {
+          holidayData = {}
+          data.data.forEach((item: any) => {
+            if (item.holiday === 1 || item.holiday === true) {
+              holidayData![item.date] = { holiday: true, name: item.name || '节假日', date: item.date }
+            }
+          })
+        }
+      } else if (apiUrl.includes('mxnz.cn')) {
+        // mxnz.cn 返回格式：{ code: 0, data: { holiday: [...] } }
+        if (data?.code === 0 && data?.data?.holiday) {
+          holidayData = data.data.holiday
+        }
       }
+
+      if (!holidayData) {
+        logger.warn(`[holiday] API 返回格式异常 ${year}`, { url: apiUrl, data })
+        continue  // 尝试下一个备用源
+      }
+
+      const holidayDates: string[] = []
+      for (const [dateStr, info] of Object.entries(holidayData)) {
+        if (info.holiday) {
+          holidaySet.add(dateStr)
+          holidayDates.push(dateStr)
+        }
+      }
+      
+      // 缓存 24 小时（节假日不会每天变化）
+      cache.set(cacheKey, holidayDates, 86400000)
+      logger.info(`[holiday] API 获取 ${year} 年成功`, { 
+        count: holidayDates.length,
+        source: apiUrl 
+      })
+      return  // 成功获取，退出函数
+    } catch (err) {
+      logger.warn(`[holiday] API 获取 ${year} 年失败`, { 
+        url: apiUrl, 
+        error: err instanceof Error ? err.message : String(err) 
+      })
+      // 继续尝试下一个备用源
     }
-    // 缓存 24 小时（节假日不会每天变化）
-    cache.set(cacheKey, holidayDates, 86400000)
-    logger.info(`[holiday] API 获取 ${year} 年成功`, { count: holidayDates.length })
-  } catch (err) {
-    logger.warn(`[holiday] API 获取 ${year} 年失败，使用兜底数据`, err)
   }
+
+  logger.warn(`[holiday] 所有 API 源均失败，使用兜底数据 ${year}`)
 }
 
 /**
@@ -1345,10 +1389,15 @@ export async function fetchFundFees(fundCode: string): Promise<FundFeeInfo> {
   if (cached) return cached
   
   // [WHAT] 判断基金类型（A类前端收费，C类销售服务费）
-  // [NOTE] 基金代码的奇偶性不判断A/C类，这里改用末尾字母作为简易启发式
-  // [TODO] 需接入真实API获取准确费率，当前数据为行业通用估算值
+  // [NOTE] 简易判断：根据基金代码末尾字母（C/E = C类，其他 = A类）
+  // [WARNING] 此方法不保证完全准确！因为：
+  //   1. 部分 C 类基金代码末尾不是 C/E（如某些特殊命名规则）
+  //   2. 部分 A 类基金代码末尾可能是其他字母
+  //   3. 最佳方案是通过天天基金 API 获取 fundType 字段
+  // [TODO] 接入真实API获取准确费率，当前数据为行业通用估算值
   const lastChar = fundCode.slice(-1).toUpperCase()
-  const isClassC = lastChar === 'C' || lastChar === 'E'
+  // [FIX] 更全面的 C 类判断：C/E/Y（Y 代表易方达 C 类）
+  const isClassC = lastChar === 'C' || lastChar === 'E' || lastChar === 'Y'
   
   // [WHAT] A类基金费率（前端收费，无销售服务费）
   const classAFees: FundFeeInfo = {

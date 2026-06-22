@@ -40,14 +40,26 @@ window.onunhandledrejection = (event) => {
   })
 }
 
-// [WHAT] 注册 PWA Service Worker（仅在生产环境）
-if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+// [WHAT] 注册 PWA Service Worker（仅在生产环境，且非 Electron 环境）
+// [WHY] Electron 环境不支持 Service Worker，且 Linux aarch64 环境下可能失败
+const isElectronEnv = typeof (window as any).electronAPI !== 'undefined' || navigator.userAgent?.includes('Electron')
+const isSupportedSWEnvironment = 'serviceWorker' in navigator 
+  && window.location.protocol !== 'file:' 
+  && !isElectronEnv
+  && !(/Linux aarch64/.test(navigator.userAgent || ''))
+
+if (isSupportedSWEnvironment) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then((reg) => {
       logger.info('Service Worker 注册成功', { scope: reg.scope })
     }).catch((err) => {
       logger.warn('Service Worker 注册失败', err)
     })
+  })
+} else {
+  logger.info('Service Worker 注册跳过（环境不支持）', { 
+    isElectron: isElectronEnv, 
+    userAgent: navigator.userAgent 
   })
 }
 

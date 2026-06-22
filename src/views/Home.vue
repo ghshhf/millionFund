@@ -334,8 +334,15 @@ async function onCopyLogs(): Promise<void> {
   }
 }
 
-// [WHAT] 页面挂载时初始化数据
+// [WHAT] 页面挂载时初始化数据（防御性检查：防止重复初始化）
+let initialized = false
 onMounted(async () => {
+  if (initialized) {
+    logger.warn('[Home] 重复挂载，跳过初始化')
+    return
+  }
+  initialized = true
+  
   logger.info('Home mounted', {
     watchlist: fundStore.watchlist?.length || 0,
     online: networkStore.isOnline,

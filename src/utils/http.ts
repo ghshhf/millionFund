@@ -38,7 +38,7 @@ export const http = {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeout)
+        const timeoutId = setTimeout(() => controller.abort(new DOMException('Request timeout', 'TimeoutError')), timeout)
         
         const response = await fetch(url, {
           ...fetchOptions,
