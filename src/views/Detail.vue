@@ -66,7 +66,7 @@ const periodReturns = ref<PeriodReturnExt[]>([])
 const sectorInfo = ref<{ name: string; dayReturn: number } | null>(null)
 const similarFunds = ref<{ code: string; name: string; yearReturn: number }[]>([])
 const dividendRecords = ref<{ date: string; amount: number; type: string }[]>([])
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const announcements = ref<{ id: string; title: string; date: string; type: string; url: string }[]>([])
 
 // [WHAT] 最佳周期回报（用于顶部核心指标展示）
@@ -104,7 +104,7 @@ const estimatedRedemptionFee = computed(() => {
 })
 
 // [WHAT] 累计分红
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const totalDividend = computed(() => {
   return dividendRecords.value.reduce((s, r) => s + r.amount, 0)
 })
@@ -575,7 +575,7 @@ function searchSimilarFunds() {
 }
 
 // [WHAT] 打开公告链接
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 function openAnnouncement(url: string) {
   if (url) {
     window.open(url, '_blank')
