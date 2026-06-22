@@ -112,16 +112,18 @@ export function handleApiError(
   options: { silent?: boolean; fallback?: () => void } = {}
 ): void {
   const context: ErrorContext = 'api'
-  let userMessage = getDefaultUserMessage('api')
 
-  // 根据错误类型定制提示
+  // 根据错误类型定制提示，创建带 userMessage 的 AppError
+  let appError: AppError
   if (error instanceof TypeError && String(error).includes('fetch')) {
-    userMessage = '网络连接失败，请检查网络'
+    appError = createAppError(String(error), context, { userMessage: '网络连接失败，请检查网络' })
   } else if (error instanceof DOMException && error.name === 'AbortError') {
-    userMessage = '请求已取消'
+    appError = createAppError(String(error), context, { userMessage: '请求已取消' })
+  } else {
+    appError = error instanceof Error ? error as AppError : createAppError(String(error), context)
   }
 
-  handleError(error, context, {
+  handleError(appError, context, {
     ...options,
     logExtra: { endpoint },
   })
