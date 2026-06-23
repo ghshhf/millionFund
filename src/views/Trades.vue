@@ -113,6 +113,14 @@
           />
 
           <van-field
+            v-model="form.fee"
+            type="number"
+            name="fee"
+            label="手续费 (¥)"
+            placeholder="可选"
+          />
+
+          <van-field
             v-model="form.date"
             name="date"
             label="日期"
@@ -177,6 +185,7 @@ const form = ref({
   amount: '',
   netValue: '',
   shares: '',
+  fee: '',
   date: '',
   remark: '',
 })
@@ -190,10 +199,8 @@ function typeLabel(type: string) {
   }
 }
 
-function onDateConfirm(val: string[] | number[]) {
-  const y = val[0] as string
-  const m = val[1] as string
-  const d = val[2] as string
+function onDateConfirm({ selectedValues }: { selectedValues: string[] }) {
+  const [y, m, d] = selectedValues
   form.value.date = `${y}-${m}-${d}`
   showDatePicker.value = false
 }
@@ -208,13 +215,13 @@ function onSubmit() {
     amount: parseFloat(form.value.amount) || 0,
     netValue: parseFloat(form.value.netValue) || 0,
     shares: parseFloat(form.value.shares) || 0,
-    fee: 0,
+    fee: parseFloat(form.value.fee) || 0,
     remark: form.value.remark,
     createdAt: Date.now(),
   }
   tradeStore.addTrade(trade)
   showPopup.value = false
-  form.value = { type: 'buy', amount: '', netValue: '', shares: '', date: '', remark: '' }
+  form.value = { type: 'buy', amount: '', netValue: '', shares: '', fee: '', date: '', remark: '' }
 }
 
 function onDelete(id: string) {

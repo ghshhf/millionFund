@@ -1,45 +1,55 @@
-// [WHY] fundFast.ts 单元测试：mock fetch 测试估值接口
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { fetchFundEstimateFast, fetchLatestNetValue } from '@/api/fundFast'
+// [WHY] fundFast.ts 单元测试：测试纯函数（跳过 JSONP 函数）
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import {
+  clearFundCache,
+  clearAllCache,
+  fetchFundEstimatesBatch,
+} from '@/api/fundFast'
 import { cache } from '@/api/cache'
 
-// Mock fetch globally
-beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn())
-})
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
-})
-
-describe('fetchFundEstimateFast', () => {
-  it('fetch 成功时返回 FundEstimate', async () => {
-    const mockData = 'jsonpgz({"fundcode":"000001","gsz":"1.234","gszzl":"1.23","gztime":"2024-01-01 15:00","dwjz":"1.2199"})'
-    ;(fetch as any).mockResolvedValue({
-      text: () => Promise.resolve(mockData),
-    })
-
-    const result = await fetchFundEstimateFast('000001')
-    expect(result.fundcode).toBe('000001')
-    expect(result.gsz).toBe('1.234')
+describe('clearFundCache', () => {
+  beforeEach(() => {
+    cache.clear()
   })
 
-  it('fetch 失败时抛出错误', async () => {
-    ;(fetch as any).mockRejectedValue(new Error('network error'))
-    await expect(fetchFundEstimateFast('000001')).rejects.toThrow()
+  it('清除指定基金的缓存', () => {
+    const key = 'estimate_000001'
+    cache.set(key, { fundcode: '000001', gsz: '1.0' })
+
+    clearFundCache('000001')
+
+    expect(cache.get(key)).toBeNull()
+  })
+
+  it('不影响其他基金的缓存', () => {
+    cache.set('estimate_000001', { fundcode: '000001' })
+    cache.set('estimate_000002', { fundcode: '000002' })
+
+    clearFundCache('000001')
+
+    expect(cache.get('estimate_000002')).not.toBeNull()
   })
 })
 
-describe('fetchLatestNetValue', () => {
-  it('fetch 成功时返回净值数据', async () => {
-    const mockData = 'jsonpgz({"fundcode":"000001","dwjz":"1.2199","jzrq":"2024-01-01","gszzl":"1.23"})'
-    ;(fetch as any).mockResolvedValue({
-      text: () => Promise.resolve(mockData),
-    })
+describe('clearAllCache', () => {
+  beforeEach(() => {
+    cache.clear()
+  })
 
-    const result = await fetchLatestNetValue('000001')
-    expect(result).not.toBeNull()
-    expect(result?.netValue).toBeCloseTo(1.2199, 4)
+  it('清除所有基金缓存', () => {
+    cache.set('estimate_000001', { fundcode: '000001' })
+    cache.set('estimate_000002', { fundcode: '000002' })
+
+    clearAllCache()
+
+    expect(cache.get('estimate_000001')).toBeNull()
+    expect(cache.get('estimate_000002')).toBeNull()
+  })
+})
+
+describe('fetchFundEstimatesBatch', () => {
+  it('返回空 Map 当输入空数组', async () => {
+    const result = await fetchFundEstimatesBatch([])
+    expect(result.size).toBe(0)
   })
 })

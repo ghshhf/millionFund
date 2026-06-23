@@ -4,6 +4,7 @@
 import { APP_VERSION } from '@/config/version'
 import { cache } from '@/api/cache'
 import { logger } from './logger'
+import type { HoldingRecord, TradeRecord } from '@/types/fund'
 
 const STORAGE_KEYS = {
   WATCHLIST: 'fund_watchlist',
@@ -279,8 +280,6 @@ export function isInWatchlist(code: string): boolean {
 
 // ========== 持仓数据 ==========
 
-import type { HoldingRecord } from '@/types/fund'
-
 /**
  * 获取持仓列表
  */
@@ -388,8 +387,6 @@ export function saveAITrackingRecords<T>(records: T[]): void {
 }
 
 // ========== 交易记录 ==========
-
-import type { TradeRecord } from '@/types/fund'
 
 const TRADES_KEY = 'fund_trades'
 
