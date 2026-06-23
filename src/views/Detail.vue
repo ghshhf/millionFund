@@ -498,7 +498,7 @@ async function addToWatchlist() {
 }
 
 function showMore() {
-  showToast('更多功能开发中')
+  router.push('/about')
 }
 
 // [WHAT] 打开行业板块管理弹窗

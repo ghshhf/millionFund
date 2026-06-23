@@ -1,123 +1,240 @@
 <template>
   <div class="trades-page">
+    <!-- 导航栏 -->
     <div class="page-header">
       <van-icon name="arrow-left" size="22" @click="router.back()" />
       <span class="header-title">交易记录</span>
-      <span></span>
+      <van-icon name="plus" size="22" @click="showPopup = true" />
     </div>
 
     <div class="scroll-content">
-      <!-- 快捷入口 -->
-      <div class="quick-actions">
-        <div class="action-card" @click="router.push('/search')">
-          <van-icon name="plus" size="24" color="#1989fa" />
-          <span>添加交易</span>
-        </div>
-        <div class="action-card" @click="router.push('/holding')">
-          <van-icon name="balance-list-o" size="24" color="#07c160" />
-          <span>查看持仓</span>
-        </div>
+      <!-- 基金信息 -->
+      <div class="fund-info" v-if="fundName">
+        <span class="fund-name">{{ fundName }}</span>
+        <span class="fund-code">{{ fundCode }}</span>
       </div>
 
-      <!-- 持仓基金列表 -->
-      <div class="section">
-        <div class="section-header">
-          <span class="section-title">持仓基金（{{ holdings.length }}）</span>
-        </div>
+      <!-- 空状态 -->
+      <div v-if="fundTrades.length === 0" class="empty-state">
+        <van-icon name="records-o" size="48" :style="{ color: 'var(--van-text-color-3)' }" />
+        <p class="empty-text">暂无交易记录</p>
+        <p class="empty-hint">点击右上角 + 添加第一条记录</p>
+      </div>
 
-        <div v-if="holdings.length === 0" class="empty-state">
-          <van-icon name="info-o" size="48" :style="{ color: 'var(--van-text-color-3)' }" />
-          <p class="empty-text">暂无交易记录</p>
-          <p class="empty-hint">添加持仓后，交易记录将自动显示在这里</p>
-          <van-button type="primary" size="small" round @click="router.push('/search')">去添加基金</van-button>
-        </div>
-
-        <div v-else class="holding-list">
-          <div
-            v-for="h in holdings"
-            :key="h.code"
-            class="holding-card"
-            @click="router.push(`/detail/${h.code}`)"
-          >
-            <div class="holding-header">
-              <span class="holding-name">{{ h.name || h.code }}</span>
-              <span class="holding-code">{{ h.code }}</span>
+      <!-- 交易记录列表 -->
+      <div v-else class="trade-list">
+        <div
+          v-for="trade in fundTrades"
+          :key="trade.id"
+          class="trade-card"
+        >
+          <div class="trade-header">
+            <span :class="['trade-type', trade.type]">{{ typeLabel(trade.type) }}</span>
+            <span class="trade-date">{{ trade.date }}</span>
+          </div>
+          <div class="trade-body">
+            <div class="trade-item">
+              <span class="label">金额</span>
+              <span class="value">¥{{ trade.amount.toFixed(2) }}</span>
             </div>
-            <div class="holding-body">
-              <div class="holding-item">
-                <span class="label">持有份额</span>
-                <span class="value">{{ formatNum(h.shares) }}</span>
-              </div>
-              <div class="holding-item">
-                <span class="label">成本净值</span>
-                <span class="value">{{ formatPrice(h.buyNetValue) }}</span>
-              </div>
-              <div class="holding-item">
-                <span class="label">市值</span>
-                <span class="value">{{ formatPrice(h.marketValue) }}</span>
-              </div>
-              <div class="holding-item">
-                <span class="label">收益</span>
-                <span class="value" :class="(h.profit ?? 0) >= 0 ? 'profit' : 'loss'">
-                  {{ (h.profit ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(h.profit) }}
-                </span>
-              </div>
+            <div class="trade-item" v-if="trade.price">
+              <span class="label">净值</span>
+              <span class="value">{{ trade.price.toFixed(4) }}</span>
             </div>
+            <div class="trade-item" v-if="trade.shares">
+              <span class="label">份额</span>
+              <span class="value">{{ trade.shares.toFixed(2) }}</span>
+            </div>
+            <div class="trade-item" v-if="trade.note">
+              <span class="label">备注</span>
+              <span class="value">{{ trade.note }}</span>
+            </div>
+          </div>
+          <div class="trade-actions">
+            <van-button size="mini" type="danger" plain round @click="onDelete(trade.id)">删除</van-button>
           </div>
         </div>
       </div>
 
-      <!-- 买入记录 -->
-      <div class="section" v-if="holdings.length > 0">
-        <div class="section-header">
-          <span class="section-title">持仓详情</span>
-        </div>
-        <div class="record-list">
-          <div
-            v-for="(h, i) in holdings"
-            :key="i"
-            class="record-card"
-          >
-            <div class="record-header">
-              <span class="record-fund">{{ h.name || h.code }}</span>
-              <span class="record-type buy">持有中</span>
-            </div>
-            <div class="record-body">
-              <span>成本: {{ formatPrice(h.buyNetValue) }}</span>
-              <span v-if="h.shares">份额: {{ formatNum(h.shares) }}</span>
-              <span v-if="h.buyDate">日期: {{ h.buyDate }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="bottom-spacer"></div>
     </div>
+
+    <!-- 添加记录弹窗 -->
+    <van-popup
+      v-model:show="showPopup"
+      position="bottom"
+      round
+      :style="{ height: '75%' }"
+    >
+      <div class="popup-header">
+        <span>添加交易记录</span>
+        <van-icon name="cross" @click="showPopup = false" />
+      </div>
+      <div class="popup-body">
+        <van-form @submit="onSubmit">
+          <van-field
+            v-model="form.type"
+            name="type"
+            label="类型"
+            :rules="[{ required: true, message: '请选择类型' }]"
+          >
+            <template #input>
+              <van-radio-group v-model="form.type" direction="horizontal">
+                <van-radio name="buy">买入</van-radio>
+                <van-radio name="sell">卖出</van-radio>
+                <van-radio name="dividend">分红</van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
+
+          <van-field
+            v-model="form.amount"
+            type="number"
+            name="amount"
+            label="金额 (¥)"
+            placeholder="请输入金额"
+            :rules="[{ required: true, message: '请输入金额' }]"
+          />
+
+          <van-field
+            v-model="form.price"
+            type="number"
+            name="price"
+            label="净值"
+            placeholder="请输入净值"
+          />
+
+          <van-field
+            v-model="form.shares"
+            type="number"
+            name="shares"
+            label="份额"
+            placeholder="请输入份额"
+          />
+
+          <van-field
+            v-model="form.date"
+            name="date"
+            label="日期"
+            placeholder="请选择日期"
+            :rules="[{ required: true, message: '请选择日期' }]"
+            @click="showDatePicker = true"
+          />
+          <van-popup v-model:show="showDatePicker" position="bottom">
+            <van-datetime-picker
+              v-model="currentDate"
+              type="date"
+              title="选择日期"
+              @confirm="onDateConfirm"
+              @cancel="showDatePicker = false"
+            />
+          </van-popup>
+
+          <van-field
+            v-model="form.note"
+            name="note"
+            label="备注"
+            placeholder="可选备注"
+          />
+
+          <div style="margin: 16px;">
+            <van-button round block type="primary" native-type="submit">提交</van-button>
+          </div>
+        </van-form>
+      </div>
+    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { showConfirmDialog } from 'vant'
+import { useTradeStore } from '@/stores/trade'
 import { useHoldingStore } from '@/stores/holding'
+import type { TradeRecord } from '@/utils/storage'
 
 const router = useRouter()
+const route = useRoute()
+const tradeStore = useTradeStore()
 const holdingStore = useHoldingStore()
 
-const holdings = holdingStore.holdings
+const fundCode = route.params.code as string
+const fund = holdingStore.holdings.find(h => h.code === fundCode)
+const fundName = fund?.name || ''
 
-function formatPrice(v: number | undefined | null): string {
-  if (v === undefined || v === null) return '--'
-  return '¥' + v.toFixed(2)
+const fundTrades = computed(() => {
+  return tradeStore.trades.filter(t => t.fundCode === fundCode)
+})
+
+const showPopup = ref(false)
+const showDatePicker = ref(false)
+const currentDate = ref(new Date())
+
+const form = ref({
+  type: 'buy' as 'buy' | 'sell' | 'dividend',
+  amount: '',
+  price: '',
+  shares: '',
+  date: '',
+  note: '',
+})
+
+function typeLabel(type: string) {
+  switch (type) {
+    case 'buy': return '买入'
+    case 'sell': return '卖出'
+    case 'dividend': return '分红'
+    default: return type
+  }
 }
 
-function formatNum(v: number | undefined | null): string {
-  if (v === undefined || v === null) return '--'
-  return v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+function onDateConfirm(val: Date) {
+  const y = val.getFullYear()
+  const m = String(val.getMonth() + 1).padStart(2, '0')
+  const d = String(val.getDate()).padStart(2, '0')
+  form.value.date = `${y}-${m}-${d}`
+  showDatePicker.value = false
 }
+
+function onSubmit() {
+  const trade: TradeRecord = {
+    id: Date.now().toString(),
+    fundCode,
+    fundName,
+    type: form.value.type,
+    amount: parseFloat(form.value.amount) || 0,
+    price: parseFloat(form.value.price) || 0,
+    shares: parseFloat(form.value.shares) || 0,
+    date: form.value.date,
+    note: form.value.note,
+  }
+  tradeStore.addTrade(trade)
+  showPopup.value = false
+  form.value = { type: 'buy', amount: '', price: '', shares: '', date: '', note: '' }
+}
+
+function onDelete(id: string) {
+  showConfirmDialog({
+    title: '确认删除',
+    message: '确定要删除这条交易记录吗？',
+  }).then(() => {
+    tradeStore.deleteTrade(id)
+  }).catch(() => {})
+}
+
+onMounted(() => {
+  tradeStore.loadTrades()
+})
 </script>
 
 <style scoped>
 .trades-page {
-  min-height: 100vh;
-  background: var(--bg-primary, #f5f5f5);
+  height: 100%;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .page-header {
@@ -125,60 +242,40 @@ function formatNum(v: number | undefined | null): string {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--van-background-2, #fff);
-  border-bottom: 1px solid var(--van-border-color, #eee);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
 }
 
 .header-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
-  color: var(--van-text-color, #333);
+  color: var(--text-primary);
 }
 
 .scroll-content {
-  padding: 12px 16px;
-  padding-bottom: 40px;
-}
-
-.quick-actions {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.action-card {
   flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px;
+}
+
+.fund-info {
+  margin-bottom: 12px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  padding: 20px;
-  background: var(--van-background-2, #fff);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--van-text-color, #333);
 }
 
-.section {
-  margin-bottom: 20px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 0 12px;
-}
-
-.section-title {
+.fund-name {
   font-size: 16px;
   font-weight: 600;
-  color: var(--van-text-color, #333);
+  color: var(--text-primary);
+}
+
+.fund-code {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .empty-state {
@@ -188,113 +285,112 @@ function formatNum(v: number | undefined | null): string {
   padding: 48px 24px;
   text-align: center;
 }
-.empty-state.small {
-  padding: 24px;
-}
 
 .empty-text {
   margin: 12px 0 4px;
   font-size: 15px;
-  color: var(--van-text-color, #333);
+  color: var(--text-primary);
 }
 
 .empty-hint {
   margin: 0 0 20px;
   font-size: 13px;
-  color: var(--van-text-color-3, #999);
+  color: var(--text-muted);
 }
 
-.holding-card {
-  background: var(--van-background-2, #fff);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.holding-header {
+.trade-list {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trade-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.trade-header {
+  display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
-.holding-name {
-  font-size: 15px;
+.trade-type {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--van-text-color, #333);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-.holding-code {
+.trade-type.buy {
+  color: #e4393c;
+  background: #fef0ef;
+}
+
+.trade-type.sell {
+  color: #1db82c;
+  background: #e8f8ed;
+}
+
+.trade-type.dividend {
+  color: #1677ff;
+  background: #e6f0ff;
+}
+
+.trade-date {
   font-size: 12px;
-  color: var(--van-text-color-3, #999);
+  color: var(--text-muted);
 }
 
-.holding-body {
+.trade-body {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
-.holding-item {
+.trade-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.holding-item .label {
-  font-size: 12px;
-  color: var(--van-text-color-3, #999);
+.trade-item .label {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.holding-item .value {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--van-text-color, #333);
-}
-
-.holding-item .value.profit {
-  color: #e4393c;
-}
-
-.holding-item .value.loss {
-  color: #1db82c;
-}
-
-.record-card {
-  background: var(--van-background-2, #fff);
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.record-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.record-fund {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--van-text-color, #333);
-}
-
-.record-type {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-.record-type.buy { color: #e4393c; background: #fef0ef; }
-.record-type.sell { color: #1db82c; background: #e8f8ed; }
-
-.record-body {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+.trade-item .value {
   font-size: 13px;
-  color: var(--van-text-color-2, #666);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.trade-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.popup-body {
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.bottom-spacer {
+  height: 40px;
 }
 </style>

@@ -34,12 +34,12 @@
 
 ### v1.9.7 (2026-06-23)
 
-- **JSONP 安全修复**：`fetchFundEstimateFast` / `fetchLatestNetValue` / `fetchFundDetail` 改为 `fetch + text() + 正则解析`，彻底移除 `<script>` 动态注入风险
+- **大幅减少 JSONP 使用**：核心估值接口已迁移为 fetch + text() + 正则解析，因为 JSONP 在 fundFast.ts 中仍有约 10 处残留
 - **统一错误处理架构**：新增 `src/utils/errorHandler.ts`，所有 API 调用统一走 `handleApiError`，用户提示更友好
 - **启用详情页功能**：`Detail.vue` 分红记录和基金公告功能解除注释并接入数据源
 - **ESLint 零警告**：修复所有类型检查和代码风格警告
-- **Vite 代理完善**：新增 `/api/fundgz`、`/api/fundmobapi` 代理配置，开发环境彻底告别 JSONP
 - **Git 历史清理**：使用 `git filter-repo` 清除敏感数据，仓库历史干净合规
+- **已知限制**：`fundFast.ts` 中 `fetchFundEstimateFast` / `fetchLatestNetValue` 仍使用 JSONP（script 标签注入），完整迁移至 fetch + proxy 见后续版本计划
 
 ### v1.9.0 (2026-06-14)
 

@@ -64,6 +64,12 @@ const router = createRouter({
       meta: { title: '关于' }
     },
     {
+      path: '/alerts',
+      name: 'alerts',
+      component: () => import('@/views/Alerts.vue'),
+      meta: { title: '涨跌提醒' }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }
