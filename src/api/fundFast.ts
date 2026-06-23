@@ -88,7 +88,8 @@ export function queueGlobalVarScript<T>(
   timeoutMs = 15000
 ): Promise<T> {
   return new Promise<T>((resolve) => {
-    const runner = () => {
+    const runner = async () => {
+      // [M6] 迁移到 fetch + new Function（替代 JSONP）
       const scriptId = `gv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
       // 请求前清零旧数据，防止读到上一个脚本残留
@@ -96,16 +97,10 @@ export function queueGlobalVarScript<T>(
         ;(window as any)[v] = null
       })
 
-      const script = document.createElement('script')
-      script.id = scriptId
-      script.src = url
-
       const timeout = setTimeout(() => finish(emptyResult), timeoutMs)
 
       async function finish(data: T) {
         clearTimeout(timeout)
-        const s = document.getElementById(scriptId)
-        if (s) document.body.removeChild(s)
         // 请求结束后清掉自己占的全局变量
         cleanupVars.forEach((v) => {
           try { delete (window as any)[v] } catch { /* */ }
@@ -115,17 +110,30 @@ export function queueGlobalVarScript<T>(
         runNextGlobalVarScript()
       }
 
-      script.onload = async () => {
-        try {
-          const result = await extract()
-          finish(result)
-        } catch (e) {
-          logger.warn('[fundFast] queueGlobalVarScript extract failed', e)
-          finish(emptyResult)
+      try {
+        // [M6] 使用 fetch 获取 JS 文本，再用 new Function 执行（设置全局变量）
+        const text = await http.text(url)
+        // 可信源（天天基金网），使用 new Function 执行 JS 以设置全局变量
+        new Function(text)()
+        const result = await extract()
+        finish(result)
+      } catch (e) {
+        logger.warn('[fundFast] queueGlobalVarScript failed, fallback to JSONP', { url, error: e })
+        // [EDGE] fetch 失败时降级为 JSONP（生产环境 CORS 受限时）
+        const script = document.createElement('script')
+        script.id = scriptId
+        script.src = url
+        script.onload = async () => {
+          try {
+            const result = await extract()
+            finish(result)
+          } catch {
+            finish(emptyResult)
+          }
         }
+        script.onerror = () => finish(emptyResult)
+        document.body.appendChild(script)
       }
-      script.onerror = () => finish(emptyResult)
-      document.body.appendChild(script)
     }
 
     globalVarScriptQueue.push(runner)
@@ -272,8 +280,32 @@ export async function fetchFundList(): Promise<FundInfo[]> {
     }
   }
 
-  // 回退到远程 JSONP 接口
-  return new Promise((resolve, reject) => {
+  // [M6] 回退到远程接口，优先 fetch + new Function，失败则降级 JSONP
+  // 开发环境通过 Vite 代理，生产环境需要配置 CORS 代理
+  return new Promise(async (resolve, reject) => {
+    // 优先尝试 fetch（开发环境通过代理）
+    try {
+      const url = `/api/fund/js/fundcode_search.js?rt=${Date.now()}`
+      const text = await http.text(url)
+      // 用 new Function 执行 JS，提取 window.r
+      new Function(text)()
+      const raw = (globalThis as any).r
+      if (!Array.isArray(raw)) {
+        throw new Error('基金列表数据格式错误')
+      }
+      _fundListCache = raw.map((item: string[]) => ({
+        code: item[0] || '',
+        pinyin: item[1] || '',
+        name: item[2] || '',
+        type: item[3] || ''
+      }))
+      resolve(_fundListCache!)
+      return
+    } catch (fetchErr) {
+      logger.warn('[fundFast] fetch 基金列表失败，降级 JSONP', { error: fetchErr })
+    }
+
+    // 降级为 JSONP
     const cbId = `fundlist_${Date.now()}`
     const timeout = setTimeout(() => {
       cleanup()
@@ -476,15 +508,25 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
   const cached = cache.get<{ records: NetValueRecord[], fundName: string }>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript(
-    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
-    () => {
-      const trend = (window as any).Data_netWorthTrend || []
-      const fundName = (window as any).fS_name || ''
-      if (trend.length === 0) return { records: [] as NetValueRecord[], fundName }
+  // [M6] 迁移到 fetch + new Function（替代 JSONP）
+  // pingzhongdata 返回 JS 代码：Data_netWorthTrend = [...]; fS_name = "..."
+  const url = `/api/pingzhongdata/${code}.js?v=${Date.now()}`
+  const text = await http.text(url)
 
+  // 用正则提取 Data_netWorthTrend 数组
+  const trendMatch = text.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/)
+  const nameMatch = text.match(/fS_name\s*=\s*"([^"]*)"/)
+
+  const fundName = nameMatch ? nameMatch[1] || '' : ''
+  let records: NetValueRecord[] = []
+
+  if (trendMatch) {
+    try {
+      // 用 new Function 安全执行 JS 数组表达式
+      const trend = new Function(`return ${trendMatch[1]}`)() as any[]
       const recentData = trend.slice(-days)
-      const records: NetValueRecord[] = recentData.map((item: any) => {
+      records = recentData.map((item: any) => {
+        // item.x 可能是时间戳或 Date 字符串
         const date = new Date(item.x)
         const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
         return {
@@ -495,12 +537,12 @@ export async function fetchNetValueHistoryFast(code: string, days = 30): Promise
         }
       })
       records.reverse()
-      return { records, fundName }
-    },
-    ['Data_netWorthTrend', 'fS_name'],
-    { records: [], fundName: '' }
-  )
+    } catch (e) {
+      logger.warn('[fundFast] 解析 Data_netWorthTrend 失败', { code, error: e })
+    }
+  }
 
+  const result = { records, fundName }
   cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
   return result
 }
