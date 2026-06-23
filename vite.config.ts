@@ -86,6 +86,13 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/fundmobapi/, ''),
       },
       
+      // === 腾讯财经（股票行情） ===
+      '/api/qttencent': {
+        target: 'https://qt.gtimg.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/qttencent/, ''),
+      },
+
       // === 其他数据源 ===
       '/api/jin10': {
         target: 'https://www.jin10.com',

@@ -694,36 +694,80 @@ export async function fetchTopHoldings(code: string): Promise<HoldingStock[]> {
         }).filter(Boolean).join(',')
 
         if (tencentCodes) {
-          await new Promise<void>((resQuote) => {
-            const scriptQuote = document.createElement('script')
-            scriptQuote.src = `https://qt.gtimg.cn/q=${tencentCodes}`
-            scriptQuote.onload = () => {
+          try {
+            const qtUrl = `/api/qttencent?q=${tencentCodes}`
+            const qtRes = await fetch(qtUrl)
+            if (qtRes.ok) {
+              const qtText = await qtRes.text()
+              // 解析 qt.gtimg.cn 返回格式：v_s_sh600000="1~贵州茅台~600519~1800.00~1.5%~..."
+              const qtRegex = /v_s_(sh|sz|bj|hk|us)(\w+)="([^"]+)"/g
+              let m: RegExpExecArray | null
+              const qtData: Record<string, string> = {}
+              while ((m = qtRegex.exec(qtText)) !== null) {
+                const prefix = m[1]
+                const code = m[2]
+                const dataStr = m[3]
+                if (!dataStr) continue
+                // 统一 key 格式与下方查找一致
+                let key = ''
+                if (prefix === 'sh' || prefix === 'sz' || prefix === 'bj') key = `${prefix}${code}`
+                else if (prefix === 'hk') key = `hk${code}`
+                else if (prefix === 'us') key = `us${code}`
+                if (key) qtData[key] = dataStr
+              }
               needQuotes.forEach((h) => {
                 const cd = String(h.code || '')
-                let varName = ''
+                let lookup = ''
                 if (/^\d{6}$/.test(cd)) {
                   const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
-                  varName = `v_s_${pfx}${cd}`
+                  lookup = `${pfx}${cd}`
                 } else if (/^\d{5}$/.test(cd)) {
-                  varName = `v_s_hk${cd}`
+                  lookup = `hk${cd}`
                 } else if (/^[A-Z]{1,6}$/.test(cd)) {
-                  varName = `v_s_us${cd}`
+                  lookup = `us${cd}`
                 } else return
-                const dataStr = (window as any)[varName]
+                const dataStr = qtData[lookup]
                 if (dataStr) {
                   const parts = dataStr.split('~')
-                  if (parts.length > 5) h.change = parseFloat(parts[5])
+                  if (parts.length > 5 && parts[5]) h.change = parseFloat(parts[5])
                 }
               })
-              if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
-              resQuote()
+            } else {
+              // 降级：fetch 失败则用 JSONP（生产环境 CORS 受限时）
+              await new Promise<void>((resQuote) => {
+                const scriptQuote = document.createElement('script')
+                scriptQuote.src = `https://qt.gtimg.cn/q=${tencentCodes}`
+                scriptQuote.onload = () => {
+                  needQuotes.forEach((h) => {
+                    const cd = String(h.code || '')
+                    let varName = ''
+                    if (/^\d{6}$/.test(cd)) {
+                      const pfx = cd.startsWith('6') || cd.startsWith('9') ? 'sh' : ((cd.startsWith('4') || cd.startsWith('8')) ? 'bj' : 'sz')
+                      varName = `v_s_${pfx}${cd}`
+                    } else if (/^\d{5}$/.test(cd)) {
+                      varName = `v_s_hk${cd}`
+                    } else if (/^[A-Z]{1,6}$/.test(cd)) {
+                      varName = `v_s_us${cd}`
+                    } else return
+                    const dataStr = (window as any)[varName]
+                    if (dataStr) {
+                      const parts = dataStr.split('~')
+                      if (parts.length > 5) h.change = parseFloat(parts[5])
+                    }
+                  })
+                  if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+                  resQuote()
+                }
+                scriptQuote.onerror = () => {
+                  if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
+                  resQuote()
+                }
+                document.body.appendChild(scriptQuote)
+              })
             }
-            scriptQuote.onerror = () => {
-              if (document.body.contains(scriptQuote)) document.body.removeChild(scriptQuote)
-              resQuote()
-            }
-            document.body.appendChild(scriptQuote)
-          })
+          } catch {
+            // 静默忽略行情获取失败
+          }
         }
       }
 
@@ -784,6 +828,7 @@ export async function fetchHS300History(days = 90): Promise<NetValueRecord[]> {
  * 获取基金基本信息（备用方案）
  * [WHY] 当天天基金API超时时，使用东方财富API获取基金名称和净值
  * [WHAT] 使用东方财富的基金详情接口
+ * [M6] 迁移到 fetch + new Function，失败则降级 JSONP
  */
 export async function fetchFundBasicInfo(code: string): Promise<{
   name: string
@@ -795,6 +840,39 @@ export async function fetchFundBasicInfo(code: string): Promise<{
   const cached = cache.get<{ name: string; netValue: number; changeRate: number; updateTime: string }>(cacheKey)
   if (cached) return cached
 
+  // [M6] 优先 fetch + new Function，失败则降级 JSONP
+  try {
+    const callbackName = `fbinfo_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const url = `/api/fundmobapi/FundMNewApi/FundMNFInfo?callback=${callbackName}&FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`
+    const text = await http.text(url)
+
+    // 用 new Function 执行 JS，通过 callback 捕获数据
+    let capturedData: any = null
+    ;(window as any)[callbackName] = (data: any) => { capturedData = data }
+    new Function(text)()
+    delete (window as any)[callbackName]
+
+    if (!capturedData || !capturedData.Datas) {
+      throw new Error('基金详情数据格式错误')
+    }
+
+    const d = capturedData.Datas
+    const result = {
+      name: d.SHORTNAME || d.FSHORTNAME || '',
+      netValue: parseFloat(d.DWJZ) || 0,
+      changeRate: parseFloat(d.RZDF) || 0,
+      updateTime: d.FSRQ || ''
+    }
+
+    if (result.name) {
+      cache.set(cacheKey, result, CACHE_TTL.FUND_DETAIL)
+    }
+    return result
+  } catch (fetchErr) {
+    logger.warn('[fundFast] fetchFundBasicInfo 失败，降级 JSONP', { code, error: fetchErr })
+  }
+
+  // 降级为 JSONP
   return new Promise((resolve) => {
     const callbackName = `fbinfo_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const timeout = setTimeout(() => {
@@ -832,7 +910,6 @@ export async function fetchFundBasicInfo(code: string): Promise<{
 
     const script = document.createElement('script')
     script.id = callbackName
-    // [DEPS] 东方财富基金详情接口
     script.src = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?callback=${callbackName}&FCODE=${code}&deviceid=wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`
     script.onerror = () => {
       cleanup()
