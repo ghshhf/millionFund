@@ -18,6 +18,8 @@ export interface FundEstimate {
   gszzl: string
   /** 估值时间（格式：2024-01-01 15:00） */
   gztime: string
+  /** 净值日期（格式：2024-01-01） */
+  jzrq?: string
 }
 
 /**

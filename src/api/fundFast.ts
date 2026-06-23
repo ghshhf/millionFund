@@ -155,8 +155,9 @@ const pendingNetValueRequests: {
 /**
  * 获取基金实时估值（带缓存）
  * [NOTE] 开盘前使用缓存数据，开盘后获取实时数据
+ * [M6] 迁移到 fetch + 正则解析（移除 JSONP）
  */
-export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
+export async function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
   const cacheKey = `estimate_${code}`
 
   // [WHAT] 检查内存缓存
@@ -173,54 +174,50 @@ export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
   }
 
   return withConcurrencyControl(() => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // [M6] 使用 fetch + 正则解析，替代 JSONP
+        // 开发环境通过 Vite 代理，生产环境需要配置 CORS 代理
+        const url = `/api/fundgz/${code}.js?rt=${Date.now()}`
+        const text = await http.text(url)
 
-      const scriptId = `fund_${code}_${Date.now()}`
-      const timeout = setTimeout(() => {
-        cleanup()
-        const idx = pendingRequests.findIndex(r => r.code === code)
-        if (idx !== -1) pendingRequests.splice(idx, 1)
-        // [EDGE] 超时时使用持久化缓存
-        reject(new Error(`超时: ${code}`))
-      }, 8000)
-
-      pendingRequests.push({
-        code,
-        resolve: (data) => {
-          cache.set(cacheKey, data, CACHE_TTL.ESTIMATE)
-          persistCache.set(cacheKey, data) // 保存到持久化缓存
-          resolve(data)
-        },
-        reject: (err) => {
-          // [EDGE] 失败时使用持久化缓存
-          reject(err)
-        },
-        timeout
-      })
-
-      function cleanup() {
-        const s = document.getElementById(scriptId)
-        if (s) document.body.removeChild(s)
-      }
-
-      const script = document.createElement('script')
-      script.id = scriptId
-      script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
-      script.onerror = () => {
-        // [NOTE] 静默处理脚本加载失败，某些基金类型不支持估值
-        cleanup()
-        const idx = pendingRequests.findIndex(r => r.code === code)
-        if (idx !== -1) {
-          clearTimeout(pendingRequests[idx]!.timeout)
-          pendingRequests.splice(idx, 1)
+        // 解析 jsonpgz({...}) 格式
+        const match = text.match(/jsonpgz\(([\s\S]*)\)/)
+        if (!match) {
+          // [EDGE] 解析失败时返回持久化缓存或 reject
+          if (persisted) {
+            cache.set(cacheKey, persisted, CACHE_TTL.ESTIMATE)
+            resolve(persisted)
+            return
+          }
+          reject(new Error(`解析估值数据失败: ${code}`))
+          return
         }
-        // [EDGE] 失败时使用持久化缓存
-        reject(new Error(`失败: ${code}`))
+
+        const jsonStr = match[1] as string
+        const data = JSON.parse(jsonStr)
+        const result: FundEstimate = {
+          fundcode: data.fundcode || code,
+          name: data.name || '',
+          gsz: data.gsz || '0',
+          gszzl: data.gszzl || '0',
+          gztime: data.gztime || '',
+          dwjz: data.dwjz || '0',
+          jzrq: data.jzrq || '',
+        }
+
+        cache.set(cacheKey, result, CACHE_TTL.ESTIMATE)
+        persistCache.set(cacheKey, result)
+        resolve(result)
+      } catch (err) {
+        // [EDGE] 失败时返回持久化缓存
+        if (persisted) {
+          cache.set(cacheKey, persisted, CACHE_TTL.ESTIMATE)
+          resolve(persisted)
+          return
+        }
+        reject(err)
       }
-      script.onload = () => {
-        setTimeout(cleanup, 100)
-      }
-      document.body.appendChild(script)
     })
   })
 }
@@ -807,6 +804,7 @@ export async function fetchFundBasicInfo(code: string): Promise<{
  * 获取基金最新公布净值（非估值）
  * [WHY] 估值接口返回的是预估值，这个接口返回基金公司实际公布的净值
  * [HOW] 使用天天基金估值接口获取实时数据
+ * [M6] 迁移到 fetch + 正则解析（移除 JSONP）
  */
 export async function fetchLatestNetValue(code: string): Promise<{
   netValue: number
@@ -818,64 +816,32 @@ export async function fetchLatestNetValue(code: string): Promise<{
   const cached = cache.get<{ netValue: number; date: string; changeRate: number }>(cacheKey)
   if (cached) return cached
 
+  // [M6] 使用 fetch + 正则解析，替代 JSONP
+  try {
+    const url = `/api/fundgz/${code}.js?rt=${Date.now()}`
+    const text = await http.text(url)
 
-  // [WHAT] 保存 cacheKey 到局部变量，避免闭包捕获变化
-  const currentCacheKey = cacheKey
-
-  return new Promise((resolve) => {
-    const scriptId = `nav_${code}_${Date.now()}`
-    const timeout = setTimeout(() => {
-      cleanup()
-      // [EDGE] 从队列中移除超时的请求
-      const index = pendingNetValueRequests.findIndex(req => req.code === code)
-      if (index !== -1) {
-        pendingNetValueRequests.splice(index, 1)
-      }
-      resolve(null)
-    }, 10000)
-
-    // [WHAT] 添加到待处理队列（resolve 时设置缓存）
-    pendingNetValueRequests.push({
-      code,
-      resolve: (data) => {
-        // [WHAT] 成功获取数据后设置缓存
-        if (data) {
-          cache.set(currentCacheKey, data, CACHE_TTL.ESTIMATE)
-        }
-        resolve(data)
-      },
-      reject: () => { },
-      timeout
-    })
-
-    function cleanup() {
-      const script = document.getElementById(scriptId)
-      if (script) {
-        document.body.removeChild(script)
-      }
+    // 解析 jsonpgz({...}) 格式
+    const match = text.match(/jsonpgz\(([\s\S]*)\)/)
+    if (!match) {
+      logger.warn('[fundFast] 解析最新净值失败', { code })
+      return null
     }
 
-    const script = document.createElement('script')
-    script.id = scriptId
-    // [DEPS] 基金估值接口，返回实时估值数据，使用固定的 jsonpgz 回调函数名
-    script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
-    script.onerror = () => {
-      cleanup()
-      const index = pendingNetValueRequests.findIndex(req => req.code === code)
-      if (index !== -1 && pendingNetValueRequests[index]) {
-        clearTimeout(pendingNetValueRequests[index]!.timeout)
-        pendingNetValueRequests.splice(index, 1)
-      }
-      resolve(null)
+    const jsonStr = match[1] as string
+    const data = JSON.parse(jsonStr)
+    const result = {
+      netValue: parseFloat(data.dwjz) || 0,  // 单位净值（公布）
+      date: data.jzrq || '',               // 净值日期
+      changeRate: parseFloat(data.rzdf) || 0, // 日增长率
     }
-    script.onload = () => {
-      // [FIX] 不要立即清理脚本，让回调有时间执行
-      setTimeout(() => {
-        cleanup()
-      }, 500)
-    }
-    document.body.appendChild(script)
-  })
+
+    cache.set(cacheKey, result, CACHE_TTL.ESTIMATE)
+    return result
+  } catch (err) {
+    logger.error('[fundFast] 获取最新净值失败', { code, error: err })
+    return null
+  }
 }
 
 // ========== 综合数据获取（多源验证） ==========
