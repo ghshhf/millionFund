@@ -37,17 +37,17 @@
               <span class="label">金额</span>
               <span class="value">¥{{ trade.amount.toFixed(2) }}</span>
             </div>
-            <div class="trade-item" v-if="trade.price">
+            <div class="trade-item" v-if="trade.netValue">
               <span class="label">净值</span>
-              <span class="value">{{ trade.price.toFixed(4) }}</span>
+              <span class="value">{{ trade.netValue.toFixed(4) }}</span>
             </div>
             <div class="trade-item" v-if="trade.shares">
               <span class="label">份额</span>
               <span class="value">{{ trade.shares.toFixed(2) }}</span>
             </div>
-            <div class="trade-item" v-if="trade.note">
+            <div class="trade-item" v-if="trade.remark">
               <span class="label">备注</span>
-              <span class="value">{{ trade.note }}</span>
+              <span class="value">{{ trade.remark }}</span>
             </div>
           </div>
           <div class="trade-actions">
@@ -97,9 +97,9 @@
           />
 
           <van-field
-            v-model="form.price"
+            v-model="form.netValue"
             type="number"
-            name="price"
+            name="netValue"
             label="净值"
             placeholder="请输入净值"
           />
@@ -121,7 +121,7 @@
             @click="showDatePicker = true"
           />
           <van-popup v-model:show="showDatePicker" position="bottom">
-            <van-datetime-picker
+            <van-date-picker
               v-model="currentDate"
               type="date"
               title="选择日期"
@@ -131,8 +131,8 @@
           </van-popup>
 
           <van-field
-            v-model="form.note"
-            name="note"
+            v-model="form.remark"
+            name="remark"
             label="备注"
             placeholder="可选备注"
           />
@@ -150,9 +150,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showConfirmDialog } from 'vant'
+import { DatePicker } from 'vant'
 import { useTradeStore } from '@/stores/trade'
 import { useHoldingStore } from '@/stores/holding'
-import type { TradeRecord } from '@/utils/storage'
+import type { TradeRecord } from '@/types/fund'
 
 const router = useRouter()
 const route = useRoute()
@@ -164,20 +165,20 @@ const fund = holdingStore.holdings.find(h => h.code === fundCode)
 const fundName = fund?.name || ''
 
 const fundTrades = computed(() => {
-  return tradeStore.trades.filter(t => t.fundCode === fundCode)
+  return tradeStore.trades.filter(t => t.code === fundCode)
 })
 
 const showPopup = ref(false)
 const showDatePicker = ref(false)
-const currentDate = ref(new Date())
+const currentDate = ref<string[]>([])
 
 const form = ref({
   type: 'buy' as 'buy' | 'sell' | 'dividend',
   amount: '',
-  price: '',
+  netValue: '',
   shares: '',
   date: '',
-  note: '',
+  remark: '',
 })
 
 function typeLabel(type: string) {
@@ -189,10 +190,10 @@ function typeLabel(type: string) {
   }
 }
 
-function onDateConfirm(val: Date) {
-  const y = val.getFullYear()
-  const m = String(val.getMonth() + 1).padStart(2, '0')
-  const d = String(val.getDate()).padStart(2, '0')
+function onDateConfirm(val: string[] | number[]) {
+  const y = val[0] as string
+  const m = val[1] as string
+  const d = val[2] as string
   form.value.date = `${y}-${m}-${d}`
   showDatePicker.value = false
 }
@@ -200,18 +201,20 @@ function onDateConfirm(val: Date) {
 function onSubmit() {
   const trade: TradeRecord = {
     id: Date.now().toString(),
-    fundCode,
-    fundName,
+    code: fundCode,
+    name: fundName,
     type: form.value.type,
-    amount: parseFloat(form.value.amount) || 0,
-    price: parseFloat(form.value.price) || 0,
-    shares: parseFloat(form.value.shares) || 0,
     date: form.value.date,
-    note: form.value.note,
+    amount: parseFloat(form.value.amount) || 0,
+    netValue: parseFloat(form.value.netValue) || 0,
+    shares: parseFloat(form.value.shares) || 0,
+    fee: 0,
+    remark: form.value.remark,
+    createdAt: Date.now(),
   }
   tradeStore.addTrade(trade)
   showPopup.value = false
-  form.value = { type: 'buy', amount: '', price: '', shares: '', date: '', note: '' }
+  form.value = { type: 'buy', amount: '', netValue: '', shares: '', date: '', remark: '' }
 }
 
 function onDelete(id: string) {

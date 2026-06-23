@@ -288,10 +288,10 @@ async function loadFundDetails() {
 
     // [WHAT] 行业配置
     const palette = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272']
-    industryAllocation.value = industryData.map((item, idx) => ({
+    industryAllocation.value = (industryData as any[]).map((item: any, idx: number) => ({
       ...item,
       color: item.color || palette[idx % palette.length]
-    }))
+    })) as any[]
 
     // [WHAT] 资产配置
     assetAllocation.value = assetData

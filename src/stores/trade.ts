@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { getTrades, saveTrades, addTrade, deleteTrade } from '@/utils/storage'
-import type { TradeRecord } from '@/utils/storage'
+import type { TradeRecord } from '@/types/fund'
 
 export const useTradeStore = defineStore('trade', {
   state: () => ({

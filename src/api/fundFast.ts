@@ -6,7 +6,6 @@ import { cache, CACHE_TTL } from './cache'
 import { isTradingTime } from './tiantianApi'
 import { persistCache } from '../utils/persistCache'
 import type { FundEstimate, FundInfo, NetValueRecord } from '@/types/fund'
-import { cache, CACHE_TTL } from './cache'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 
