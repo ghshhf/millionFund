@@ -287,7 +287,11 @@ async function loadFundDetails() {
       .sort((a, b) => b.holdingRatio - a.holdingRatio)
 
     // [WHAT] 行业配置
-    industryAllocation.value = industryData
+    const palette = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272']
+    industryAllocation.value = industryData.map((item, idx) => ({
+      ...item,
+      color: item.color || palette[idx % palette.length]
+    }))
 
     // [WHAT] 资产配置
     assetAllocation.value = assetData

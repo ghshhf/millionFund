@@ -41,6 +41,16 @@ export {
   type HoldingStock
 } from './fund/holdings'
 
+// ========== 配置/评级 ==========
+export {
+  fetchIndustryAllocation,
+  fetchAssetAllocation,
+  fetchFundRating,
+  type IndustryAllocation,
+  type AssetAllocation,
+  type FundRating,
+} from './fund/allocation'
+
 // ========== 基金经理 ==========
 export {
   fetchFundManagerInfo,

@@ -2,7 +2,6 @@
 // [WHAT] 获取基金实时估值、批量估值、最新净值
 
 import { unifiedCache, CACHE_KEYS, UNIFIED_CACHE_TTL } from '../unifiedCache'
-import { persistCache } from '@/utils/persistCache'
 import { isTradingTime } from '../tiantianApi'
 import { fetchFundEstimateViaHttp, withConcurrencyControl } from './request'
 import { http } from '@/utils/http'
@@ -29,7 +28,7 @@ export async function fetchFundEstimateFast(code: string): Promise<FundEstimate>
   if (cached) return cached
 
   // [WHAT] 获取持久化缓存
-  const persisted = persistCache.get<FundEstimate>(cacheKey)
+  const persisted = unifiedCache.getPersistent<FundEstimate>(cacheKey)
 
   // [WHAT] 非交易时间直接返回持久化缓存
   if (!isTradingTime() && persisted) {

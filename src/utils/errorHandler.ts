@@ -187,5 +187,27 @@ export function handleApiError(
   })
 }
 
+// [WHAT] View 层专用：统一处理 Promise 错误（日志 + Toast + 降级值）
+//        页面内 catch 块里直接调，不用再写 showToast + logger.error 重复代码
+export async function handleViewError<T>(
+  promise: Promise<T>,
+  options: {
+    fallback?: T
+    context?: ErrorContext
+    endpoint?: string
+    silent?: boolean
+    customMessage?: string
+  } = {}
+): Promise<T | undefined> {
+  try {
+    return await promise
+  } catch (error) {
+    handleApiError(error, options.endpoint || 'view', {
+      silent: options.silent,
+    })
+    return options.fallback
+  }
+}
+
 // [WHAT] 导出新的 ApiError 相关函数供外部使用
 export { createApiError, isApiError, inferErrorCode } from '@/types/error'

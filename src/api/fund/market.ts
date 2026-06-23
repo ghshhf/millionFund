@@ -3,7 +3,6 @@
 
 import { unifiedCache, CACHE_KEYS, UNIFIED_CACHE_TTL } from '../unifiedCache'
 import { http } from '@/utils/http'
-import { persistCache } from '@/utils/persistCache'
 import { isTradingTime } from '../tiantianApi'
 import { logger } from '@/utils/logger'
 
@@ -167,7 +166,7 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
   const cached = unifiedCache.get<MarketOverview>(cacheKey)
   if (cached) return cached
 
-  const persisted = persistCache.get<MarketOverview>(cacheKey)
+  const persisted = unifiedCache.getPersistent<MarketOverview>(cacheKey)
 
   // [WHAT] 非交易时间使用持久化缓存
   if (!isTradingTime()) {

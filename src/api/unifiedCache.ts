@@ -154,15 +154,13 @@ export const unifiedCache = {
    * 清除指定前缀的所有缓存
    */
   clearPrefix(prefix: string): void {
-    // [WHAT] 清除内存缓存
-    const memKeys = Array.from((cache as any).cache?.keys() || ([] as string[]))
+    const memKeys = Array.from((cache as any).cache?.keys() || []) as string[]
     memKeys.forEach((k: string) => {
       if (k.startsWith(prefix)) {
         cache.delete(k)
       }
     })
-    
-    // [WHAT] 清除持久化缓存
+
     persistCache.clear()
   },
 
@@ -204,11 +202,39 @@ export const unifiedCache = {
     if (cached !== null) {
       return cached
     }
-    
+
     const data = await fetcher()
     this.setWithTradingTime(key, data, options)
     return data
-  }
+  },
+
+  /**
+   * 仅获取内存缓存（不读 localStorage）
+   */
+  getMemory<T>(key: string): T | null {
+    return cache.get<T>(key)
+  },
+
+  /**
+   * 仅写入内存缓存（不写 localStorage）
+   */
+  setMemory<T>(key: string, data: T, ttlMs = CACHE_TTL.FUND_INFO): void {
+    cache.set(key, data, ttlMs)
+  },
+
+  /**
+   * 仅获取持久化缓存（不读内存）
+   */
+  getPersistent<T>(key: string): T | null {
+    return persistCache.get<T>(key)
+  },
+
+  /**
+   * 仅写入持久化缓存（不写内存）
+   */
+  setPersistent<T>(key: string, data: T, ttlMs = 86400000): void {
+    persistCache.set(key, data, ttlMs)
+  },
 }
 
 /**
