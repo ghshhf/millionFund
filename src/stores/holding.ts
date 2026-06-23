@@ -203,11 +203,72 @@ export const useHoldingStore = defineStore('holding', () => {
       return
     }
 
-    // [EDGE] 计算份额和服务费
+    // [EDGE] 计算份额和成本净值 - 边界情况处理
     let shares = holding.shares
-    const buyNav = holding.buyNetValue > 0 ? holding.buyNetValue : currentValue
+    let buyNav = holding.buyNetValue
+    
+    // [FIX] 边界情况处理：确保份额和成本净值有效
     if (!shares || shares <= 0) {
-      shares = (holding.marketValue || 0) / (buyNav || 1)
+      // [CASE 1] 优先使用市值/当前净值估算份额
+      if (currentValue > 0 && holding.marketValue && holding.marketValue > 0) {
+        shares = holding.marketValue / currentValue
+        logger.debug(`[holding] 使用市值/当前净值估算份额: ${holding.code}`, { 
+          marketValue: holding.marketValue, 
+          currentValue, 
+          shares 
+        })
+      } 
+      // [CASE 2] 使用市值/成本净值估算份额
+      else if (buyNav > 0 && holding.marketValue && holding.marketValue > 0) {
+        shares = holding.marketValue / buyNav
+        logger.debug(`[holding] 使用市值/成本净值估算份额: ${holding.code}`, { 
+          marketValue: holding.marketValue, 
+          buyNav, 
+          shares 
+        })
+      } 
+      // [CASE 3] 无法计算份额，标记为无效持仓
+      else {
+        shares = 0
+        logger.warn(`[holding] 无法计算份额，标记为无效持仓: ${holding.code}`, {
+          buyNetValue: holding.buyNetValue,
+          currentValue,
+          marketValue: holding.marketValue
+        })
+      }
+    }
+    
+    // [FIX] 成本净值边界处理
+    if (!buyNav || buyNav <= 0) {
+      // [CASE 1] 使用当前净值作为成本（观察仓场景）
+      if (currentValue > 0) {
+        buyNav = currentValue
+        logger.debug(`[holding] 使用当前净值作为成本: ${holding.code}`, { buyNav })
+      } else {
+        // [CASE 2] 无法确定成本，标记为无效
+        buyNav = 0
+      }
+    }
+
+    // [FIX] 份额无效时，跳过收益计算
+    if (shares <= 0 || currentValue <= 0 || buyNav <= 0) {
+      holdings.value[index] = {
+        ...holding,
+        name: data.name || holding.name,
+        currentValue,
+        shares,
+        buyNetValue: buyNav,
+        marketValue: shares > 0 ? shares * currentValue : holding.marketValue,
+        profit: 0,
+        profitRate: 0,
+        todayProfit: 0,
+        loading: false,
+        dataSource: data.dataSource,
+        valueDate: data.navDate || data.estimateTime?.split(' ')[0],
+        isUpdated: currentValue > 0
+      }
+      upsertHolding(holdings.value[index])
+      return
     }
 
     // 严格按照份额和净值计算市值和收益
@@ -219,7 +280,8 @@ export const useHoldingStore = defineStore('holding', () => {
     // 当日收益 = 持仓市值 × 当日涨跌幅
     const todayProfit = marketValue * (data.dayChange / 100)
 
-    const profitRate = marketValue > 0 ? profit / marketValue * 100 : 0
+    // [FIX] 收益率计算保护：避免除零
+    const profitRate = marketValue > 0 ? (profit / marketValue) * 100 : 0
 
     // 计算趋势预测
     let trendPrediction: TrendPrediction | undefined
@@ -268,6 +330,7 @@ export const useHoldingStore = defineStore('holding', () => {
       todayProfit,
       loading: false,
       shares,
+      buyNetValue: buyNav,  // [FIX] 使用处理后的成本净值
       trendPrediction,
       dataSource: data.dataSource,
       valueDate: data.navDate || data.estimateTime?.split(' ')[0],

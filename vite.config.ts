@@ -46,6 +46,47 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // [WHY] 解决开发环境第三方 API 跨域问题
+      
+      // === 天天基金相关 ===
+      '/api/fundgz': {
+        target: 'https://fundgz.1234567.com.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/fundgz/, ''),
+      },
+      '/api/pingzhongdata': {
+        target: 'https://fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/pingzhongdata/, ''),
+      },
+      '/api/fund': {
+        target: 'https://fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/fund/, ''),
+      },
+      
+      // === 东方财富相关 ===
+      '/api/qt': {
+        target: 'https://push2.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/qt/, ''),
+      },
+      '/api/nplistapi': {
+        target: 'https://np-listapi.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/nplistapi/, ''),
+      },
+      '/api/apifund': {
+        target: 'https://api.fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/apifund/, ''),
+      },
+      '/api/fundmobapi': {
+        target: 'https://fundmobapi.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/fundmobapi/, ''),
+      },
+      
+      // === 其他数据源 ===
       '/api/jin10': {
         target: 'https://www.jin10.com',
         changeOrigin: true,
@@ -65,30 +106,6 @@ export default defineConfig({
         target: 'https://data.eastmoney.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/choice/, ''),
-      },
-      // [WHY] 代理天天基金估值接口，解决 CORS 问题（开发环境）
-      '/api/fundgz': {
-        target: 'https://fundgz.1234567.com.cn',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/fundgz/, ''),
-      },
-      // [WHY] 代理东方财富资讯接口，解决 CORS 问题（开发环境）
-      '/api/nplistapi': {
-        target: 'https://np-listapi.eastmoney.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/nplistapi/, ''),
-      },
-      // [WHY] 代理东方财富基金分红接口，解决 CORS 问题（开发环境）
-      '/api/apifund': {
-        target: 'https://api.fund.eastmoney.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/apifund/, ''),
-      },
-      // [WHY] 代理东方财富基金详情接口，解决 JSONP 安全风险
-      '/api/fundmobapi': {
-        target: 'https://fundmobapi.eastmoney.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/fundmobapi/, ''),
       },
     },
   },

@@ -3,21 +3,20 @@
 
 import { showToast } from 'vant'
 import { logger } from './logger'
+import {
+  createApiError,
+  isApiError,
+  inferErrorCode,
+  mapCodeToContext,
+  type ApiError,
+  type ApiErrorCode,
+  type ErrorContext
+} from '@/types/error'
 
-export type ErrorContext = 
-  | 'api'       // API 请求失败
-  | 'network'   // 网络异常
-  | 'storage'   // 本地存储读写失败
-  | 'parse'     // 数据解析失败
-  | 'unknown'   // 未知错误
+// [WHAT] 兼容旧版 AppError 类型（实际使用 ApiError）
+export type AppError = ApiError
 
-export interface AppError extends Error {
-  context: ErrorContext
-  recoverable: boolean  // 是否可自动恢复（如缓存降级）
-  userMessage: string    // 展示给用户的提示
-}
-
-// [WHAT] 创建标准错误对象
+// [WHAT] 创建标准错误对象（使用新的 ApiError 类型）
 export function createAppError(
   message: string,
   context: ErrorContext,
@@ -25,16 +24,32 @@ export function createAppError(
     recoverable?: boolean
     userMessage?: string
     originalError?: unknown
+    endpoint?: string
+    fundCode?: string
+    fallbackData?: unknown
   } = {}
 ): AppError {
-  const error = new Error(message) as AppError
-  error.context = context
-  error.recoverable = options.recoverable ?? true
-  error.userMessage = options.userMessage ?? getDefaultUserMessage(context)
-  if (options.originalError) {
-    error.cause = options.originalError
+  // [WHAT] 将 ErrorContext 映射到 ApiErrorCode
+  const code = contextToCode(context)
+  return createApiError(code, message, {
+    endpoint: options.endpoint,
+    fundCode: options.fundCode,
+    recoverable: options.recoverable ?? true,
+    userMessage: options.userMessage ?? getDefaultUserMessage(context),
+    fallbackData: options.fallbackData,
+    originalError: options.originalError
+  })
+}
+
+// [WHAT] ErrorContext 映射到 ApiErrorCode
+function contextToCode(context: ErrorContext): ApiErrorCode {
+  switch (context) {
+    case 'api': return 'SERVER_ERROR'
+    case 'network': return 'NETWORK'
+    case 'storage': return 'UNKNOWN'
+    case 'parse': return 'PARSE'
+    default: return 'UNKNOWN'
   }
-  return error
 }
 
 // [WHAT] 默认用户提示
@@ -58,13 +73,26 @@ export function handleError(
     logExtra?: Record<string, unknown>
   } = {}
 ): void {
-  const appError = error instanceof Error 
-    ? error as AppError 
-    : createAppError(String(error), context)
+  // [WHAT] 优先使用 ApiError，否则创建新的
+  let appError: AppError
+  if (isApiError(error)) {
+    appError = error
+  } else if (error instanceof Error) {
+    const code = inferErrorCode(error)
+    appError = createApiError(code, error.message, {
+      userMessage: getDefaultUserMessage(mapCodeToContext(code)),
+      originalError: error
+    })
+  } else {
+    appError = createAppError(String(error), context)
+  }
 
   // 日志记录（含上下文）
   logger.error(`[${context}] ${appError.message}`, {
     error: appError.message,
+    code: appError.code,
+    endpoint: appError.endpoint,
+    fundCode: appError.fundCode,
     stack: appError.stack,
     ...options.logExtra,
   })
@@ -109,22 +137,55 @@ export function withErrorHandling<T>(
 export function handleApiError(
   error: unknown,
   endpoint: string,
-  options: { silent?: boolean; fallback?: () => void } = {}
+  options: {
+    silent?: boolean
+    fallback?: () => void
+    fundCode?: string
+  } = {}
 ): void {
   const context: ErrorContext = 'api'
 
-  // 根据错误类型定制提示，创建带 userMessage 的 AppError
+  // [WHAT] 根据错误类型创建 ApiError
   let appError: AppError
-  if (error instanceof TypeError && String(error).includes('fetch')) {
-    appError = createAppError(String(error), context, { userMessage: '网络连接失败，请检查网络' })
+  if (isApiError(error)) {
+    appError = error
+  } else if (error instanceof TypeError && String(error).includes('fetch')) {
+    appError = createApiError('NETWORK', String(error), {
+      endpoint,
+      fundCode: options.fundCode,
+      userMessage: '网络连接失败，请检查网络'
+    })
   } else if (error instanceof DOMException && error.name === 'AbortError') {
-    appError = createAppError(String(error), context, { userMessage: '请求已取消' })
+    appError = createApiError('TIMEOUT', String(error), {
+      endpoint,
+      fundCode: options.fundCode,
+      userMessage: '请求已取消'
+    })
+  } else if (error instanceof SyntaxError) {
+    appError = createApiError('PARSE', String(error), {
+      endpoint,
+      fundCode: options.fundCode,
+      userMessage: '数据解析失败'
+    })
+  } else if (error instanceof Error) {
+    const code = inferErrorCode(error)
+    appError = createApiError(code, error.message, {
+      endpoint,
+      fundCode: options.fundCode,
+      originalError: error
+    })
   } else {
-    appError = error instanceof Error ? error as AppError : createAppError(String(error), context)
+    appError = createApiError('UNKNOWN', String(error), {
+      endpoint,
+      fundCode: options.fundCode
+    })
   }
 
   handleError(appError, context, {
     ...options,
-    logExtra: { endpoint },
+    logExtra: { endpoint, fundCode: options.fundCode },
   })
 }
+
+// [WHAT] 导出新的 ApiError 相关函数供外部使用
+export { createApiError, isApiError, inferErrorCode } from '@/types/error'

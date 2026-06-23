@@ -1,9 +1,9 @@
 // [WHY] 天天基金 API 增强版 - 直接调用 Eastmoney API
 // [WHAT] 提供基金排行、详情、阶段涨幅、大数据榜单等高级功能
-// [DEPS] 使用 JSONP 和 fetch 直接请求天天基金接口
+// [DEPS] 使用 HTTP 请求 + 正则解析，替代 JSONP script 注入
 
 import { cache, CACHE_TTL } from './cache'
-import { queueGlobalVarScript } from './fundFast'
+import { fetchJsData, parseJsVariable, withConcurrencyControl } from './fund/request'
 import { logger } from '@/utils/logger'
 import { http } from '@/utils/http'
 import { handleApiError } from '@/utils/errorHandler'
@@ -485,53 +485,57 @@ export async function fetchFundRankExt(options: {
 /**
  * 获取基金阶段涨幅（带排名）
  * [WHY] 从 pingzhongdata 获取详细的阶段数据
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchPeriodReturnExt(code: string): Promise<PeriodReturnExt[]> {
   const cacheKey = `period_ext_${code}`
   const cached = cache.get<PeriodReturnExt[]>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript<PeriodReturnExt[]>(
-    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
-    () => {
-      const periodData = (window as any).Data_rateInSimilarPers498 || []
-      const periodConfig: Record<string, { period: string, label: string }> = {
-        'Z': { period: '1w', label: '近1周' },
-        'Y': { period: '1m', label: '近1月' },
-        '3Y': { period: '3m', label: '近3月' },
-        '6Y': { period: '6m', label: '近6月' },
-        '1N': { period: '1y', label: '近1年' },
-        '2N': { period: '2y', label: '近2年' },
-        '3N': { period: '3y', label: '近3年' },
-        '5N': { period: '5y', label: '近5年' },
-        'JN': { period: 'ytd', label: '今年来' },
-        'LN': { period: 'all', label: '成立来' }
-      }
-      const items: PeriodReturnExt[] = []
-      if (Array.isArray(periodData)) {
-        periodData.forEach((item: any) => {
-          const config = periodConfig[item.title]
-          if (config) {
-            items.push({
-              period: config.period,
-              label: config.label,
-              fundReturn: parseFloat(item.syl) || 0,
-              avgReturn: parseFloat(item.avg) || 0,
-              hs300Return: parseFloat(item.hs300) || 0,
-              rank: parseInt(item.rank) || 0,
-              totalCount: parseInt(item.sc) || 0
-            })
-          }
-        })
-      }
-      return items
-    },
-    ['Data_rateInSimilarPers498'],
-    []
-  )
+  try {
+    const url = `/api/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`
+    const text = await http.text(url, { timeout: 15000 })
+    
+    // [WHAT] 解析 Data_rateInSimilarPers498 变量
+    const periodData = parseJsVariable<any[]>(text, 'Data_rateInSimilarPers498') || []
+    
+    const periodConfig: Record<string, { period: string; label: string }> = {
+      'Z': { period: '1w', label: '近1周' },
+      'Y': { period: '1m', label: '近1月' },
+      '3Y': { period: '3m', label: '近3月' },
+      '6Y': { period: '6m', label: '近6月' },
+      '1N': { period: '1y', label: '近1年' },
+      '2N': { period: '2y', label: '近2年' },
+      '3N': { period: '3y', label: '近3年' },
+      '5N': { period: '5y', label: '近5年' },
+      'JN': { period: 'ytd', label: '今年来' },
+      'LN': { period: 'all', label: '成立来' }
+    }
+    
+    const items: PeriodReturnExt[] = []
+    if (Array.isArray(periodData)) {
+      periodData.forEach((item: any) => {
+        const config = periodConfig[item.title]
+        if (config) {
+          items.push({
+            period: config.period,
+            label: config.label,
+            fundReturn: parseFloat(item.syl) || 0,
+            avgReturn: parseFloat(item.avg) || 0,
+            hs300Return: parseFloat(item.hs300) || 0,
+            rank: parseInt(item.rank) || 0,
+            totalCount: parseInt(item.sc) || 0
+          })
+        }
+      })
+    }
 
-  cache.set(cacheKey, result, CACHE_TTL.NET_VALUE)
-  return result
+    cache.set(cacheKey, items, CACHE_TTL.NET_VALUE)
+    return items
+  } catch (e) {
+    handleApiError(e, `fetchPeriodReturnExt(${code})`, { silent: true })
+    return []
+  }
 }
 
 // ========== 热门主题/板块 ==========
@@ -574,30 +578,35 @@ export async function fetchHotThemes(): Promise<HotTheme[]> {
 /**
  * 获取基金评级信息
  * [WHY] 展示各机构对基金的评级
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchFundRatingFromEval(code: string): Promise<FundRating | null> {
   const cacheKey = `rating_${code}`
   const cached = cache.get<FundRating>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript<FundRating | null>(
-    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
-    () => {
-      const evalData = (window as any).Data_performanceEvaluation
-      if (!evalData) return null
-      return {
-        date: new Date().toISOString().split('T')[0] ?? '',
-        shanghai: 0,
-        zhaoshang: 0,
-        jian: Math.round(parseFloat(evalData.avr) / 20) || 0
-      }
-    },
-    ['Data_performanceEvaluation'],
-    null
-  )
+  try {
+    const url = `/api/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`
+    const text = await http.text(url, { timeout: 15000 })
+    
+    // [WHAT] 解析 Data_performanceEvaluation 变量
+    const evalData = parseJsVariable<{ avr?: string }>(text, 'Data_performanceEvaluation')
+    
+    if (!evalData) return null
+    
+    const result: FundRating = {
+      date: new Date().toISOString().split('T')[0] ?? '',
+      shanghai: 0,
+      zhaoshang: 0,
+      jian: Math.round(parseFloat(evalData.avr || '0') / 20) || 0
+    }
 
-  if (result) cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-  return result
+    cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+    return result
+  } catch (e) {
+    handleApiError(e, `fetchFundRatingFromEval(${code})`, { silent: true })
+    return null
+  }
 }
 
 // ========== 基金持仓变动 ==========
@@ -613,30 +622,36 @@ export interface HoldingChange {
 /**
  * 获取基金持仓变动
  * [WHY] 展示重仓股变动情况
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchHoldingChanges(code: string): Promise<HoldingChange[]> {
   const cacheKey = `holding_change_${code}`
   const cached = cache.get<HoldingChange[]>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript<HoldingChange[]>(
-    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
-    () => {
-      const stockPositions = (window as any).Data_investPosition?.fundStocks || []
-      return stockPositions.slice(0, 10).map((item: any) => ({
-        stockCode: item.GPDM || '',
-        stockName: item.GPJC || '',
-        ratio: parseFloat(item.JZBL) || 0,
-        change: parseFloat(item.PCTNVCHG) || 0,
-        marketValue: parseFloat(item.GPJC) || 0
-      }))
-    },
-    ['Data_investPosition'],
-    []
-  )
+  try {
+    const url = `/api/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`
+    const text = await http.text(url, { timeout: 15000 })
+    
+    // [WHAT] 解析 Data_investPosition 变量
+    const positionData = parseJsVariable<{ fundStocks?: any[] }>(text, 'Data_investPosition')
+    
+    if (!positionData?.fundStocks) return []
+    
+    const result: HoldingChange[] = positionData.fundStocks.slice(0, 10).map((item: any) => ({
+      stockCode: item.GPDM || '',
+      stockName: item.GPJC || '',
+      ratio: parseFloat(item.JZBL) || 0,
+      change: parseFloat(item.PCTNVCHG) || 0,
+      marketValue: parseFloat(item.GPJC) || 0
+    }))
 
-  cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-  return result
+    cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
+    return result
+  } catch (e) {
+    handleApiError(e, `fetchHoldingChanges(${code})`, { silent: true })
+    return []
+  }
 }
 
 // ========== 同类基金对比 ==========
@@ -653,40 +668,43 @@ export interface SimilarFund {
 /**
  * 获取同类基金（用于对比）
  * [WHY] 帮助用户了解同类基金表现
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchSimilarFunds(code: string): Promise<SimilarFund[]> {
   const cacheKey = `similar_${code}`
   const cached = cache.get<SimilarFund[]>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript<SimilarFund[]>(
-    `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`,
-    () => {
-      const sameType = (window as any).swithSameType || []
-      const items: SimilarFund[] = []
-      if (sameType[3]) {
-        sameType[3].slice(0, 5).forEach((item: string) => {
-          const parts = item.split('_')
-          if (parts.length >= 3) {
-            items.push({
-              code: parts[0] ?? '',
-              name: parts[1] ?? '',
-              yearReturn: parseFloat(parts[2] ?? '0') || 0,
-              threeYearReturn: 0,
-              scale: 0,
-              manager: ''
-            })
-          }
-        })
+  try {
+    const url = `/api/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`
+    const text = await http.text(url, { timeout: 15000 })
+    
+    // [WHAT] 解析 swithSameType 变量
+    const sameTypeData = parseJsVariable<any[]>(text, 'swithSameType')
+    
+    if (!sameTypeData || !sameTypeData[3]) return []
+    
+    const items: SimilarFund[] = sameTypeData[3].slice(0, 5).map((item: string) => {
+      const parts = item.split('_')
+      if (parts.length >= 3) {
+        return {
+          code: parts[0] ?? '',
+          name: parts[1] ?? '',
+          yearReturn: parseFloat(parts[2] ?? '0') || 0,
+          threeYearReturn: 0,
+          scale: 0,
+          manager: ''
+        }
       }
-      return items
-    },
-    ['swithSameType'],
-    []
-  )
+      return null
+    }).filter((item): item is SimilarFund => item !== null)
 
-  cache.set(cacheKey, result, CACHE_TTL.FUND_INFO)
-  return result
+    cache.set(cacheKey, items, CACHE_TTL.FUND_INFO)
+    return items
+  } catch (e) {
+    handleApiError(e, `fetchSimilarFunds(${code})`, { silent: true })
+    return []
+  }
 }
 
 // ========== 基金经理排行榜 ==========
@@ -706,6 +724,7 @@ export interface ManagerRankItem {
  * 获取基金经理排行榜
  * [WHY] 帮助用户发现优秀的基金经理
  * [HOW] 从基金排行数据中提取经理信息并去重汇总
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchManagerRank(options: {
   sortBy?: string
@@ -722,81 +741,83 @@ export async function fetchManagerRank(options: {
   const cached = cache.get<ManagerRankItem[]>(cacheKey)
   if (cached) return cached
 
-  const result = await queueGlobalVarScript<ManagerRankItem[]>(
-    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&pi=1&pn=500&dx=1&v=${Date.now()}`,
-    () => {
-      const rankData = (window as any).rankData
-      if (!rankData?.datas) return []
+  try {
+    const url = `/api/fund/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&pi=1&pn=500&dx=1&v=${Date.now()}`
+    const text = await http.text(url, { timeout: 30000 })
+    
+    // [WHAT] 解析 rankData 变量
+    const rankData = parseJsVariable<{ datas?: string[] }>(text, 'rankData')
+    
+    if (!rankData?.datas) return []
 
-      const managerMap = new Map<string, {
-        name: string
-        company: string
-        funds: { name: string, return: number }[]
-        totalReturn: number
-      }>()
+    const managerMap = new Map<string, {
+      name: string
+      company: string
+      funds: { name: string; return: number }[]
+      totalReturn: number
+    }>()
 
-      rankData.datas.forEach((row: string) => {
-        const cols = row.split(',')
+    rankData.datas.forEach((row: string) => {
+      const cols = row.split(',')
 
-        let managerName = ''
-        for (const idx of [18, 24, 19, 23]) {
-          const val = cols[idx]
-          if (val && val !== '--' && val.length > 0 && val.length < 20 && !/^\d+(\.\d+)?%?$/.test(val)) {
-            managerName = val
-            break
-          }
+      let managerName = ''
+      for (const idx of [18, 24, 19, 23]) {
+        const val = cols[idx]
+        if (val && val !== '--' && val.length > 0 && val.length < 20 && !/^\d+(\.\d+)?%?$/.test(val)) {
+          managerName = val
+          break
         }
-
-        const fundName = cols[1] ?? ''
-        const yearReturn = parseFloat(cols[11] ?? '0') || 0
-
-        if (managerName) {
-          const managers = managerName.split(/[\s、]+/)
-          managers.forEach(mgr => {
-            const name = mgr.trim()
-            if (!name || name.length > 10) return
-
-            if (managerMap.has(name)) {
-              const data = managerMap.get(name)!
-              data.funds.push({ name: fundName, return: yearReturn })
-              data.totalReturn += yearReturn
-            } else {
-              managerMap.set(name, {
-                name,
-                company: '--',
-                funds: [{ name: fundName, return: yearReturn }],
-                totalReturn: yearReturn
-              })
-            }
-          })
-        }
-      })
-
-      const items: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
-        managerId: m.name,
-        name: m.name,
-        company: m.company,
-        workTime: '--',
-        fundCount: m.funds.length,
-        scale: '--',
-        bestReturn: Math.max(...m.funds.map(f => f.return)),
-        avgReturn: m.totalReturn / m.funds.length
-      }))
-
-      if (sortBy === 'workyear') {
-        items.sort((a, b) => b.fundCount - a.fundCount)
-      } else {
-        items.sort((a, b) => b.avgReturn - a.avgReturn)
       }
 
-      return items.slice(0, pageSize)
-    },
-    ['rankData'],
-    []
-  )
+      const fundName = cols[1] ?? ''
+      const yearReturn = parseFloat(cols[11] ?? '0') || 0
 
-  cache.set(cacheKey, result, CACHE_TTL.FUND_LIST)
-  return result
+      if (managerName) {
+        const managers = managerName.split(/[\s、]+/)
+        managers.forEach(mgr => {
+          const name = mgr.trim()
+          if (!name || name.length > 10) return
+
+          if (managerMap.has(name)) {
+            const data = managerMap.get(name)!
+            data.funds.push({ name: fundName, return: yearReturn })
+            data.totalReturn += yearReturn
+          } else {
+            managerMap.set(name, {
+              name,
+              company: '--',
+              funds: [{ name: fundName, return: yearReturn }],
+              totalReturn: yearReturn
+            })
+          }
+        })
+      }
+    })
+
+    const items: ManagerRankItem[] = Array.from(managerMap.values()).map(m => ({
+      managerId: m.name,
+      name: m.name,
+      company: m.company,
+      workTime: '--',
+      fundCount: m.funds.length,
+      scale: '--',
+      bestReturn: Math.max(...m.funds.map(f => f.return)),
+      avgReturn: m.totalReturn / m.funds.length
+    }))
+
+    if (sortBy === 'workyear') {
+      items.sort((a, b) => b.fundCount - a.fundCount)
+    } else {
+      items.sort((a, b) => b.avgReturn - a.avgReturn)
+    }
+
+    const result = items.slice(0, pageSize)
+    cache.set(cacheKey, result, CACHE_TTL.FUND_LIST)
+    return result
+  } catch (e) {
+    handleApiError(e, 'fetchManagerRank', { silent: true })
+    return []
+  }
 }
 
 // ========== 基金涨跌分布 ==========
@@ -818,8 +839,9 @@ export interface MarketOverview {
 /**
  * 获取基金涨跌分布
  * [WHY] 展示市场整体涨跌情况
- * [HOW] 天天基金 rankhandler 会设置全局变量 rankData
+ * [HOW] 使用 HTTP 请求获取天天基金 rankhandler 数据
  * [NOTE] 开盘前使用昨天的缓存数据，开盘后更新
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchMarketOverview(): Promise<MarketOverview> {
   const cacheKey = 'market_overview_v2'
@@ -867,109 +889,107 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
     distribution: createRanges()
   })
 
-  const result = await queueGlobalVarScript<MarketOverview>(
-    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`,
-    () => {
-      const rankData = (window as any).rankData
-      const ranges = createRanges()
-      let totalUp = 0
-      let totalDown = 0
+  try {
+    const url = `/api/fund/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`
+    const text = await http.text(url, { timeout: 30000 })
+    
+    // [WHAT] 解析 rankData 变量
+    const rankData = parseJsVariable<{ datas?: string[] }>(text, 'rankData')
+    
+    if (!rankData?.datas) return persisted || createEmptyData()
+    
+    const ranges = createRanges()
+    let totalUp = 0
+    let totalDown = 0
 
-      if (rankData?.datas && Array.isArray(rankData.datas)) {
-        rankData.datas.forEach((row: string) => {
-          const cols = row.split(',')
-          let change = parseFloat(cols[6] ?? '0')
-          if (isNaN(change) || cols[6] === '') {
-            change = parseFloat(cols[4] ?? '0') || parseFloat(cols[5] ?? '0') || 0
-          }
-          if (change > 0) totalUp++
-          else if (change < 0) totalDown++
-          for (const r of ranges) {
-            if (change > r.min && change <= r.max) {
-              r.count++
-              break
-            }
-          }
-        })
+    rankData.datas.forEach((row: string) => {
+      const cols = row.split(',')
+      let change = parseFloat(cols[6] ?? '0')
+      if (isNaN(change) || cols[6] === '') {
+        change = parseFloat(cols[4] ?? '0') || parseFloat(cols[5] ?? '0') || 0
       }
-
-      if (totalUp > 0 || totalDown > 0) {
-        const now = new Date()
-        return {
-          updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-          totalUp,
-          totalDown,
-          distribution: ranges
+      if (change > 0) totalUp++
+      else if (change < 0) totalDown++
+      for (const r of ranges) {
+        if (change > r.min && change <= r.max) {
+          r.count++
+          break
         }
       }
-      return persisted || createEmptyData()
-    },
-    ['rankData'],
-    persisted || createEmptyData()
-  )
+    })
 
-  if (result.totalUp > 0 || result.totalDown > 0) {
-    cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
-    persistCache.set(cacheKey, result)
+    if (totalUp > 0 || totalDown > 0) {
+      const now = new Date()
+      const result: MarketOverview = {
+        updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        totalUp,
+        totalDown,
+        distribution: ranges
+      }
+      
+      cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
+      persistCache.set(cacheKey, result)
+      return result
+    }
+    
+    return persisted || createEmptyData()
+  } catch (e) {
+    handleApiError(e, 'fetchMarketOverview', { silent: true })
+    return persisted || createEmptyData()
   }
-  return result
 }
 
 function fetchMarketOverviewInBackground(currentData: MarketOverview): void {
   const cacheKey = 'market_overview_v2'
-  queueGlobalVarScript<MarketOverview>(
-    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`,
-    () => {
-      const rankData = (window as any).rankData
-      if (!rankData?.datas || !Array.isArray(rankData.datas)) return currentData
+  
+  const url = `/api/fund/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`
+  
+  http.text(url, { timeout: 30000 }).then(text => {
+    const rankData = parseJsVariable<{ datas?: string[] }>(text, 'rankData')
+    if (!rankData?.datas) return
 
-      const ranges: FundDistribution[] = [
-        { range: '≤-5', count: 0, min: -Infinity, max: -5 },
-        { range: '-5~-3', count: 0, min: -5, max: -3 },
-        { range: '-3~-1', count: 0, min: -3, max: -1 },
-        { range: '-1~0', count: 0, min: -1, max: -0.001 },
-        { range: '0~1', count: 0, min: -0.001, max: 1 },
-        { range: '1~3', count: 0, min: 1, max: 3 },
-        { range: '3~5', count: 0, min: 3, max: 5 },
-        { range: '≥5', count: 0, min: 5, max: Infinity }
-      ]
+    const ranges: FundDistribution[] = [
+      { range: '≤-5', count: 0, min: -Infinity, max: -5 },
+      { range: '-5~-3', count: 0, min: -5, max: -3 },
+      { range: '-3~-1', count: 0, min: -3, max: -1 },
+      { range: '-1~0', count: 0, min: -1, max: -0.001 },
+      { range: '0~1', count: 0, min: -0.001, max: 1 },
+      { range: '1~3', count: 0, min: 1, max: 3 },
+      { range: '3~5', count: 0, min: 3, max: 5 },
+      { range: '≥5', count: 0, min: 5, max: Infinity }
+    ]
 
-      let totalUp = 0
-      let totalDown = 0
+    let totalUp = 0
+    let totalDown = 0
 
-      rankData.datas.forEach((row: string) => {
-        const cols = row.split(',')
-        let change = parseFloat(cols[6] ?? '0')
-        if (isNaN(change) || cols[6] === '') {
-          change = parseFloat(cols[4] ?? '0') || 0
-        }
-        if (change > 0) totalUp++
-        else if (change < 0) totalDown++
-        for (const r of ranges) {
-          if (change > r.min && change <= r.max) {
-            r.count++
-            break
-          }
-        }
-      })
-
-      if (totalUp > 0 || totalDown > 0) {
-        const now = new Date()
-        const result: MarketOverview = {
-          updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-          totalUp,
-          totalDown,
-          distribution: ranges
-        }
-        cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
-        persistCache.set(cacheKey, result)
-        return result
+    rankData.datas.forEach((row: string) => {
+      const cols = row.split(',')
+      let change = parseFloat(cols[6] ?? '0')
+      if (isNaN(change) || cols[6] === '') {
+        change = parseFloat(cols[4] ?? '0') || 0
       }
-      return currentData
-    },
-    ['rankData'],
-    currentData
-  ).catch(() => {})
+      if (change > 0) totalUp++
+      else if (change < 0) totalDown++
+      for (const r of ranges) {
+        if (change > r.min && change <= r.max) {
+          r.count++
+          break
+        }
+      }
+    })
+
+    if (totalUp > 0 || totalDown > 0) {
+      const now = new Date()
+      const result: MarketOverview = {
+        updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        totalUp,
+        totalDown,
+        distribution: ranges
+      }
+      cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
+      persistCache.set(cacheKey, result)
+    }
+  }).catch(() => {})
 }
 
 // ========== 场外基金涨幅榜 ==========
@@ -984,36 +1004,41 @@ export interface OTCFundItem {
 
 /**
  * 获取场外基金涨幅榜
- * [HOW] 天天基金 rankhandler 会设置全局变量 rankData
+ * [HOW] 使用 HTTP 请求获取天天基金 rankhandler 数据
+ * [FIX] 使用 HTTP 请求替代 queueGlobalVarScript
  */
 export async function fetchOTCFundRank(order: 'desc' | 'asc' = 'desc', pageSize = 10): Promise<OTCFundItem[]> {
   const cacheKey = `otc_rank_${order}_${pageSize}`
   const cached = cache.get<OTCFundItem[]>(cacheKey)
   if (cached) return cached
 
-  const st = order === 'desc' ? 'desc' : 'asc'
-  const result = await queueGlobalVarScript<OTCFundItem[]>(
-    `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=${st}&pi=1&pn=${pageSize}&dx=1&v=${Date.now()}`,
-    () => {
-      const rankData = (window as any).rankData
-      if (!rankData?.datas || !Array.isArray(rankData.datas)) return []
-      return rankData.datas.slice(0, pageSize).map((row: string) => {
-        const cols = row.split(',')
-        return {
-          code: cols[0] ?? '',
-          name: cols[1] ?? '',
-          netValue: parseFloat(cols[4] ?? '0') || 0,
-          dayReturn: parseFloat(cols[6] ?? '0') || 0,
-          updateStatus: '已更新'
-        }
-      })
-    },
-    ['rankData'],
-    []
-  )
+  try {
+    const st = order === 'desc' ? 'desc' : 'asc'
+    const url = `/api/fund/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=${st}&pi=1&pn=${pageSize}&dx=1&v=${Date.now()}`
+    const text = await http.text(url, { timeout: 10000 })
+    
+    // [WHAT] 解析 rankData 变量
+    const rankData = parseJsVariable<{ datas?: string[] }>(text, 'rankData')
+    
+    if (!rankData?.datas) return []
+    
+    const result: OTCFundItem[] = rankData.datas.slice(0, pageSize).map((row: string) => {
+      const cols = row.split(',')
+      return {
+        code: cols[0] ?? '',
+        name: cols[1] ?? '',
+        netValue: parseFloat(cols[4] ?? '0') || 0,
+        dayReturn: parseFloat(cols[6] ?? '0') || 0,
+        updateStatus: '已更新'
+      }
+    })
 
-  cache.set(cacheKey, result, 60000)
-  return result
+    cache.set(cacheKey, result, 60000)
+    return result
+  } catch (e) {
+    handleApiError(e, 'fetchOTCFundRank', { silent: true })
+    return []
+  }
 }
 
 // ========== 板块及基金 ==========
